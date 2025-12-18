@@ -35,36 +35,7 @@ export default function Navigation() {
           text: 'Import data',
           href: '/import-data',
         },
-        {
-          type: 'link',
-          text: 'Query editor',
-          href: '/query-editor',
-        },
       ],
-    },
-    {
-      type: 'section',
-      text: 'Administration',
-      items: [
-        {
-          type: 'link',
-          text: 'Settings',
-          href: '/settings',
-        },
-      ],
-    },
-    { type: 'divider' },
-    {
-      type: 'link',
-      text: 'Documentation',
-      href: 'https://docs.aws.amazon.com/aurora-dsql/',
-      external: true,
-    },
-    {
-      type: 'link',
-      text: 'AWS Console',
-      href: 'https://console.aws.amazon.com/',
-      external: true,
     },
   ];
 
@@ -72,7 +43,7 @@ export default function Navigation() {
     <SideNavigation
       activeHref={location.pathname}
       header={{
-        text: 'Aurora DSQL',
+        text: 'UDE Console',
         href: '/',
       }}
       onFollow={(event) => {

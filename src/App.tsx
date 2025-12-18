@@ -11,7 +11,6 @@ import CreateDatabase from './pages/CreateDatabase';
 import ImportData from './pages/ImportData';
 import DatabaseDetails from './pages/DatabaseDetails';
 import Databases from './pages/Databases';
-import QueryEditor from './pages/QueryEditor';
 import { useAppStore } from './context/AppContext';
 import { ChatProvider, useChatContext } from './context/ChatContext';
 import '@cloudscape-design/global-styles/index.css';
@@ -23,7 +22,6 @@ const breadcrumbConfig: Record<string, { text: string; parent?: string }> = {
   '/create-database': { text: 'Create database', parent: '/databases' },
   '/database-details': { text: 'Cluster details', parent: '/databases' },
   '/import-data': { text: 'Import data', parent: '/' },
-  '/query-editor': { text: 'Query editor', parent: '/' },
   '/settings': { text: 'Settings', parent: '/' },
 };
 
@@ -40,9 +38,9 @@ function buildBreadcrumbs(pathname: string): Array<{ text: string; href: string 
 
   // Always ensure root is present if not already
   if (items.length === 0 || items[0].href !== '/') {
-    items.unshift({ text: 'Aurora DSQL', href: '/' });
+    items.unshift({ text: 'UDE Console', href: '/' });
   } else {
-    items[0].text = 'Aurora DSQL';
+    items[0].text = 'UDE Console';
   }
 
   return items;
@@ -122,7 +120,6 @@ function AppContent() {
           <Route path="/create-database" element={<CreateDatabase />} />
           <Route path="/database-details" element={<DatabaseDetails />} />
           <Route path="/import-data" element={<ImportData />} />
-          <Route path="/query-editor" element={<QueryEditor />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       }
