@@ -10,6 +10,7 @@ import ColumnLayout from '@cloudscape-design/components/column-layout';
 import Tabs from '@cloudscape-design/components/tabs';
 import Button from '@cloudscape-design/components/button';
 import CopyToClipboard from '@cloudscape-design/components/copy-to-clipboard';
+import Alert from '@cloudscape-design/components/alert';
 
 export default function DatabaseDetails() {
   const navigate = useNavigate();
@@ -50,6 +51,19 @@ export default function DatabaseDetails() {
         >
           {resource.name.split(' - ')[0]}
         </Header>
+
+        {/* Setup continuation alert */}
+        <Alert
+          type="info"
+          header="Continue setting up your database"
+          action={
+            <Button onClick={() => navigate('/import-data')}>
+              Import data
+            </Button>
+          }
+        >
+          Your database cluster is ready. Import your data to start building your application.
+        </Alert>
 
         {/* Cluster Overview */}
         <Container
