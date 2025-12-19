@@ -234,19 +234,23 @@ export default function ImportData() {
             onAction={handleSubmit}
             placeholder={IMPORT_DATA_CONFIG.placeholder}
             actionButtonAriaLabel="Start conversation"
-            actionButtonIconName="angle-right-double"
+            actionButtonIconName="send"
+            minRows={3}
+            maxRows={8}
           />
 
-          {/* Support Prompts */}
-          <SupportPromptGroup
-            ariaLabel="Quick start suggestions"
-            alignment="horizontal"
-            onItemClick={({ detail }) => handlePromptClick(detail.id)}
-            items={IMPORT_DATA_CONFIG.initialPrompts.map(p => ({
-              id: p.id,
-              text: p.text,
-            }))}
-          />
+          {/* Support Prompts - shown when option is selected */}
+          {workflow.selectedOption && (
+            <SupportPromptGroup
+              ariaLabel="Quick start suggestions"
+              alignment="horizontal"
+              onItemClick={({ detail }) => handlePromptClick(detail.id)}
+              items={IMPORT_DATA_CONFIG.initialPrompts.map(p => ({
+                id: p.id,
+                text: p.text,
+              }))}
+            />
+          )}
         </SpaceBetween>
       </div>
     );

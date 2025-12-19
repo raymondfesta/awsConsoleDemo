@@ -20,23 +20,6 @@ export default function Navigation() {
       href: '/databases',
       info: databases.length > 0 ? <Badge color="blue">{databases.length}</Badge> : undefined,
     },
-    { type: 'divider' },
-    {
-      type: 'section',
-      text: 'Actions',
-      items: [
-        {
-          type: 'link',
-          text: 'Create database',
-          href: '/create-database',
-        },
-        {
-          type: 'link',
-          text: 'Import data',
-          href: '/import-data',
-        },
-      ],
-    },
   ];
 
   return (

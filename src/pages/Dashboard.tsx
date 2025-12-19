@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ContentLayout from '@cloudscape-design/components/content-layout';
 import Container from '@cloudscape-design/components/container';
@@ -13,6 +13,7 @@ import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import Icon from '@cloudscape-design/components/icon';
 import Grid from '@cloudscape-design/components/grid';
 import { useAppStore, type DatabaseCluster, type ActivityEvent } from '../context/AppContext';
+import { useChatContext } from '../context/ChatContext';
 
 // Format relative time
 function formatRelativeTime(date: Date): string {
@@ -51,7 +52,7 @@ function getActivityIcon(type: ActivityEvent['type']): 'status-positive' | 'uplo
   }
 }
 
-// Tile-style selectable card wrapper matching Cloudscape Tiles styling
+// Tile-style selectable card matching Cloudscape Tiles selected state
 const SelectableCard = ({
   selected,
   onClick,
@@ -70,10 +71,14 @@ const SelectableCard = ({
       flex: 1,
       cursor: 'pointer',
       borderRadius: '16px',
-      boxShadow: selected
-        ? '0 0 0 2px #0972d3'
-        : 'none',
-      transition: 'box-shadow 90ms linear',
+      border: selected
+        ? '2px solid #0972d3'
+        : '1px solid #414d5c',
+      background: selected
+        ? 'rgba(9, 114, 211, 0.1)'
+        : 'var(--color-background-layout-main)',
+      padding: '20px',
+      transition: 'border-color 90ms linear, background-color 90ms linear',
     }}
   >
     <div style={{ pointerEvents: 'none' }}>
@@ -85,7 +90,15 @@ const SelectableCard = ({
 export default function Dashboard() {
   const navigate = useNavigate();
   const { databases, activities } = useAppStore();
+  const { setDrawerOpen } = useChatContext();
   const [selectedAction, setSelectedAction] = useState<'create' | 'explore'>('create');
+
+  // Open chat drawer by default when dashboard is in empty state
+  useEffect(() => {
+    if (databases.length === 0) {
+      setDrawerOpen(true);
+    }
+  }, [databases.length, setDrawerOpen]);
 
   // Calculate stats
   const activeDatabases = databases.filter(db => db.status === 'active').length;
@@ -186,14 +199,12 @@ export default function Dashboard() {
             selected={selectedAction === 'create'}
             onClick={() => setSelectedAction('create')}
           >
-            <Container>
-              <Box textAlign="center" padding={{ vertical: 'l' }}>
-                <Box variant="h2" margin={{ bottom: 'xs' }}>Create</Box>
-                <Box color="text-body-secondary">
-                  Create, connect, import data and start querying your database.
-                </Box>
+            <Box textAlign="center" padding={{ vertical: 'l' }}>
+              <Box variant="h2" margin={{ bottom: 'xs' }}>Create</Box>
+              <Box color="text-body-secondary">
+                Create, connect, import data and start querying your database.
               </Box>
-            </Container>
+            </Box>
           </SelectableCard>
 
           {/* Explore card */}
@@ -201,14 +212,12 @@ export default function Dashboard() {
             selected={selectedAction === 'explore'}
             onClick={() => setSelectedAction('explore')}
           >
-            <Container>
-              <Box textAlign="center" padding={{ vertical: 'l' }}>
-                <Box variant="h2" margin={{ bottom: 'xs' }}>Explore</Box>
-                <Box color="text-body-secondary">
-                  Learn about our database offerings, their features, and more.
-                </Box>
+            <Box textAlign="center" padding={{ vertical: 'l' }}>
+              <Box variant="h2" margin={{ bottom: 'xs' }}>Explore</Box>
+              <Box color="text-body-secondary">
+                Learn about our database offerings, their features, and more.
               </Box>
-            </Container>
+            </Box>
           </SelectableCard>
         </div>
 
