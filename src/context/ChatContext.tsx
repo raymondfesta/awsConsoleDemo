@@ -168,7 +168,7 @@ interface DemoStep {
   prompts?: SupportPrompt[];
   updateStep?: { stepId: string; status: StepStatus };
   updateConfigSection?: { sectionId: ConfigSectionId; status: StepStatus; values?: ConfigSectionValues };
-  updateConfigSections?: Array<{ sectionId: ConfigSectionId; status: StepStatus; values?: ConfigSectionValues }>;
+  updateConfigSections?: Array<{ sectionId: ConfigSectionId; status: StepStatus; title?: string; values?: ConfigSectionValues }>;
   createResource?: ResourceInfo;
   transitionView?: WorkflowView;
   setPath?: WorkflowPath;
@@ -846,6 +846,175 @@ Ready to create your database?`,
     stepCompleted: 'DB Design',
     updateStep: { stepId: 'db-design', status: 'success' },
     feedbackEnabled: true,
+  },
+
+  // ===== MIGRATION FLOW PROMPT RESPONSES =====
+  // Source Discovery
+  'source-ec2': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'source-onprem': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'source-other-cloud': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'ec2-prod': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'ec2-staging': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'ec2-manual': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'db-ecommerce': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'db-analytics': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'db-manual': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+
+  // Target Configuration (for customize option)
+  'target-change-instance': {
+    message: `I can adjust the instance size. Based on your 45 GB database, here are the options:
+
+• db.r6g.large (current): 2 vCPU, 16 GB - Good for moderate workloads
+• db.r6g.xlarge: 4 vCPU, 32 GB - Better for high concurrency
+• db.r6g.2xlarge: 8 vCPU, 64 GB - Best for heavy workloads
+
+Which would you prefer?`,
+    nextPrompts: [
+      { id: 'instance-large', text: 'db.r6g.large (16 GB)' },
+      { id: 'instance-xlarge', text: 'db.r6g.xlarge (32 GB)' },
+      { id: 'instance-2xlarge', text: 'db.r6g.2xlarge (64 GB)' },
+    ],
+    feedbackEnabled: true,
+  },
+  'target-change-region': {
+    message: `Available regions for Aurora DSQL:
+
+• us-east-1 (N. Virginia) - Same as source, lowest latency
+• us-west-2 (Oregon) - West Coast presence
+• eu-west-1 (Ireland) - European compliance
+
+Which region would you prefer?`,
+    nextPrompts: [
+      { id: 'region-us-east-1', text: 'us-east-1 (same as source)' },
+      { id: 'region-us-west-2', text: 'us-west-2 (Oregon)' },
+      { id: 'region-eu-west-1', text: 'eu-west-1 (Ireland)' },
+    ],
+    feedbackEnabled: true,
+  },
+  'instance-large': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'instance-xlarge': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'instance-2xlarge': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'region-us-east-1': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'region-us-west-2': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'region-eu-west-1': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+
+  // Migration Settings
+  'migration-settings-confirm': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'migration-select-tables': {
+    message: `Select which tables to include in the migration:
+
+All tables are selected by default. You can exclude tables that aren't needed in the target.`,
+    nextPrompts: [
+      { id: 'tables-all', text: 'Migrate all tables' },
+      { id: 'tables-exclude-audit', text: 'Exclude audit tables' },
+      { id: 'tables-core-only', text: 'Core tables only' },
+    ],
+    feedbackEnabled: true,
+  },
+  'migration-change-type': {
+    message: `Migration type options:
+
+• Full load + CDC: Complete data copy with ongoing replication (recommended)
+• Full load only: One-time data copy, no ongoing sync
+• CDC only: Only replicate changes (requires existing schema)
+
+Which type would you prefer?`,
+    nextPrompts: [
+      { id: 'type-full-cdc', text: 'Full load + CDC (recommended)' },
+      { id: 'type-full-only', text: 'Full load only' },
+      { id: 'type-cdc-only', text: 'CDC only' },
+    ],
+    feedbackEnabled: true,
+  },
+  'tables-all': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'tables-exclude-audit': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'tables-core-only': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'type-full-cdc': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'type-full-only': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'type-cdc-only': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+
+  // Schedule
+  'schedule-now': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'schedule-tonight': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'schedule-weekend': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
+  },
+  'schedule-custom': {
+    message: '', // Handled by script - just advance
+    feedbackEnabled: false,
   },
 };
 
@@ -1701,187 +1870,613 @@ food-delivery-staging has been created with all settings from food-delivery-prod
 
 // MIGRATE DATABASE demo script (EC2 to Aurora)
 const MIGRATE_DATABASE_SCRIPT: DemoStep[] = [
-  // Step 0: Initial response
+  // ===== SOURCE DISCOVERY =====
+  // Step 0: Initial - Ask which EC2 instance hosts the database
   {
     agentMessage: {
       type: 'agent',
-      content: `I'll help you migrate your database to Aurora DSQL. This includes schema migration, data transfer, and validation.
+      content: `I'll help you migrate your PostgreSQL database from EC2 to Aurora DSQL. This process includes source analysis, schema migration, data transfer, and CDC replication.
 
-What's your current database setup?`,
+I found the following EC2 instances in your account:
+
+• i-0abc123def (prod-db-server) - us-east-1a
+• i-0def456abc (staging-db) - us-east-1b
+
+Which instance is running your PostgreSQL database?`,
       feedbackEnabled: true,
     },
+    updateStep: { stepId: 'source-discovery', status: 'in-progress' },
     prompts: [
-      { id: 'migrate-ec2-postgres', text: 'PostgreSQL on EC2' },
-      { id: 'migrate-ec2-mysql', text: 'MySQL on EC2' },
-      { id: 'migrate-rds', text: 'Amazon RDS' },
-      { id: 'migrate-other', text: 'Other source' },
+      { id: 'ec2-prod', text: 'i-0abc123def (prod-db-server)' },
+      { id: 'ec2-staging', text: 'i-0def456abc (staging-db)' },
+      { id: 'ec2-manual', text: 'Enter instance ID manually' },
     ],
     delay: 1500,
   },
-  // Step 1: After source type selection
+
+  // ===== CONNECTION SETUP =====
+  // Step 1: Ask for connection details and create migration user
   {
     agentMessage: {
       type: 'agent',
-      content: `PostgreSQL on EC2 - great choice for migration to Aurora DSQL!
+      content: `✓ Selected: i-0abc123def (prod-db-server)
 
-To connect to your source database, I'll need some details. Can you provide the connection information?`,
-      feedbackEnabled: true,
-    },
-    prompts: [
-      { id: 'connect-info', text: 'Enter connection details' },
-      { id: 'use-secrets', text: 'Use AWS Secrets Manager' },
-      { id: 'use-demo', text: 'Use demo settings' },
-    ],
-    delay: 1200,
-  },
-  // Step 2: Connection validation
-  {
-    agentMessage: {
-      type: 'agent',
-      content: `I've connected to your EC2 PostgreSQL instance.
+To analyze your database and perform the migration, I need read access to your PostgreSQL instance. Please create a migration user with the required permissions:
 
-Source database details:
-• Host: ec2-postgres.example.com
-• Database: ecommerce_prod
-• Size: 45 GB
-• Tables: 24
-• PostgreSQL version: 14.9
+\`\`\`sql
+-- Create migration user
+CREATE USER migration_user WITH PASSWORD 'your-secure-password';
 
-How would you like to handle the migration?`,
-      feedbackEnabled: true,
-    },
-    prompts: [
-      { id: 'full-migration', text: 'Full migration (schema + data)' },
-      { id: 'schema-only', text: 'Schema only' },
-      { id: 'incremental', text: 'Incremental sync' },
-    ],
-    delay: 1500,
-  },
-  // Step 3: Migration plan
-  {
-    agentMessage: {
-      type: 'agent',
-      content: `I'll perform a full migration. Here's the plan:
+-- Grant required permissions
+GRANT pg_read_all_data TO migration_user;
+GRANT USAGE ON SCHEMA public TO migration_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO migration_user;
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO migration_user;
+\`\`\`
 
-Phase 1: Preparation
-• Create Aurora DSQL cluster
-• Set up AWS DMS replication instance
-
-Phase 2: Schema Migration
-• Migrate all 24 tables
-• Recreate indexes and constraints
-
-Phase 3: Data Migration
-• Initial data load (45 GB)
-• Enable CDC for ongoing changes
-
-Phase 4: Validation
-• Row count verification
-• Data integrity checks
-
-Estimated time: ~2 hours. Ready to start?`,
+Once you've created the user, click below to provide the connection details.`,
       feedbackEnabled: true,
       actions: [
-        { id: 'start-migration', label: 'Start migration', variant: 'primary' },
-        { id: 'configure-manual', label: 'Customize plan' },
+        { id: 'migration-user-created', label: 'I\'ve created the user', variant: 'primary' },
+        { id: 'copy-scripts', label: 'Copy scripts' },
       ],
     },
+    // Source discovery still in progress - waiting for connection and db selection
+    delay: 1500,
+  },
+  // Step 2: Provide credentials (auto-advances after button click)
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Please provide the connection details. I'll securely store them in AWS Secrets Manager.
+
+For this demo, I'll use:
+• Host: 10.0.1.45 (private IP of i-0abc123def)
+• Port: 5432
+• Username: migration_user
+• Password: ••••••••••••
+
+Saving to Secrets Manager...`,
+      feedbackEnabled: true,
+    },
+    delay: 1500,
+  },
+  // Step 3: Saved credentials, now connecting (auto-advances)
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Credentials saved to Secrets Manager (secret: migration/prod-db-server)
+
+Connecting to source database...`,
+    },
+    delay: 1200,
+  },
+  // Step 4: Connected - discover databases
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Connected successfully!
+
+I detected PostgreSQL 14.9 running on this instance. I found the following databases:
+
+Which database do you want to migrate?`,
+      feedbackEnabled: true,
+    },
+    updateStep: { stepId: 'source-discovery', status: 'success' },
+    prompts: [
+      { id: 'db-ecommerce', text: 'ecommerce_prod (45 GB)' },
+      { id: 'db-analytics', text: 'analytics_db (12 GB)' },
+      { id: 'db-manual', text: 'Enter database name' },
+    ],
+    delay: 1500,
+  },
+  // Step 5: Analyzing selected database (auto-advances after prompt selection)
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Selected database: ecommerce_prod
+
+Analyzing database schema and gathering metadata...`,
+    },
+    updateStep: { stepId: 'connection-setup', status: 'in-progress' },
+    delay: 1500,
+  },
+  // Step 6: Show metadata analysis results
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Analysis complete! Here's what I found:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SOURCE DATABASE ANALYSIS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Database: ecommerce_prod
+• PostgreSQL Version: 14.9
+• Total Size: 45 GB
+• Tables: 24
+• Schemas: 3 (public, analytics, audit)
+• Indexes: 42
+• Foreign Keys: 18
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LARGEST TABLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• orders: 5.8M rows (22 GB)
+• order_items: 12.4M rows (8 GB)
+• users: 1.2M rows (3 GB)
+• products: 45K rows (500 MB)
+• inventory: 2.1M rows (4 GB)
+
+Generating target configuration recommendation...`,
+      feedbackEnabled: true,
+    },
+    updateStep: { stepId: 'connection-setup', status: 'success' },
+    delay: 2500,
+  },
+
+  // ===== TARGET CONFIGURATION =====
+  // Step 7: Recommend target config with action buttons (matching Create New pattern)
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Based on your source database analysis, here's my recommended Aurora DSQL configuration:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLUSTER CONFIGURATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Cluster name: ecommerce-aurora
+• Engine: Aurora DSQL (PostgreSQL 15.4)
+• Region: us-east-1 (same as source)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Instance class: db.r6g.xlarge (recommended for 45GB + growth)
+• vCPU: 4 cores
+• Memory: 32 GB RAM
+• Multi-AZ: Enabled
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STORAGE & PERFORMANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Storage type: Aurora Auto-scaling
+• Initial: 100 GB
+• Max: 1 TB
+• IOPS: 6,000 baseline
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECURITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Encryption at rest: AES-256 (AWS managed key)
+• Encryption in transit: TLS 1.3
+• Authentication: IAM + password
+• Public access: Disabled
+
+How would you like to proceed?`,
+      feedbackEnabled: true,
+      actions: [
+        { id: 'create-target', label: 'Create target database', variant: 'primary' },
+        { id: 'customize-target', label: 'Customize' },
+      ],
+      stepCompleted: 'Connection Setup',
+    },
+    updateStep: { stepId: 'target-config', status: 'in-progress' },
     delay: 2000,
   },
-  // Step 4: Migration starts
+  // Step 8: Start target creation - transition to design view
   {
     agentMessage: {
       type: 'agent',
-      content: `Starting migration process...
-
-Phase 1: Creating Aurora DSQL cluster in us-east-1`,
+      content: `Creating target database. I'll configure everything and keep you updated on the progress.`,
     },
-    updateStep: { stepId: 'configure', status: 'in-progress' },
-    delay: 800,
+    transitionView: 'design',
+    setPath: 'auto-setup',
+    updateConfigSection: {
+      sectionId: 'cluster',
+      status: 'in-progress',
+      values: {
+        'Cluster name': 'ecommerce-aurora',
+        'Engine': 'Aurora DSQL (PostgreSQL)',
+        'Region': 'us-east-1',
+      },
+    },
+    delay: 1000,
   },
-  // Step 5: Phase 1 progress
+  // Step 9: Cluster complete
   {
     agentMessage: {
       type: 'agent',
-      content: `Phase 1: Preparation
-
-✓ Aurora DSQL cluster created
-✓ DMS replication instance launched
-✓ Source endpoint configured
-• Target endpoint configuration...`,
+      content: `✓ Cluster configuration complete
+• Configuring instance...`,
+    },
+    updateConfigSection: {
+      sectionId: 'cluster',
+      status: 'success',
+      values: {
+        'Cluster name': 'ecommerce-aurora',
+        'Engine': 'Aurora DSQL (PostgreSQL)',
+        'Region': 'us-east-1',
+      },
+    },
+    delay: 1500,
+  },
+  // Step 10: Instance complete
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Cluster configuration complete
+✓ Instance provisioned
+• Configuring storage...`,
+    },
+    updateConfigSection: {
+      sectionId: 'instance',
+      status: 'success',
+      values: {
+        'Instance class': 'db.r6g.xlarge',
+        'vCPU': '4',
+        'Memory': '32 GB',
+        'Multi-AZ': 'Enabled',
+      },
     },
     createResource: {
       id: 'ecommerce-aurora-001',
       name: 'ecommerce-aurora - us-east-1',
-      type: 'Aurora DSQL - PostgreSQL (Migration)',
+      type: 'Aurora DSQL - PostgreSQL',
       region: 'us-east-1',
       status: 'creating',
-      details: {
-        'Source': 'ec2-postgres.example.com',
-        'Migration Type': 'Full + CDC',
+      endpoint: 'ecommerce-aurora.dsql.us-east-1.on.aws',
+    },
+    delay: 1500,
+  },
+  // Step 11: Storage complete
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Cluster configuration complete
+✓ Instance provisioned
+✓ Storage configured
+• Applying security settings...`,
+    },
+    updateConfigSection: {
+      sectionId: 'storage',
+      status: 'success',
+      values: {
+        'Storage type': 'Aurora Auto-scaling',
+        'Initial storage': '100 GB',
+        'Max storage': '1 TB',
+        'IOPS': '6,000 baseline',
       },
     },
-    delay: 2500,
+    delay: 1500,
   },
-  // Step 6: Phase 2
+  // Step 12: Security complete - target creation done
   {
     agentMessage: {
       type: 'agent',
-      content: `Phase 2: Schema Migration
+      content: `✓ Cluster configuration complete
+✓ Instance provisioned
+✓ Storage configured
+✓ Security settings applied
 
-✓ Tables created: 24/24
-✓ Indexes recreated: 18/18
-✓ Foreign keys: 12/12
-✓ Sequences configured`,
+Target database created successfully!`,
+      feedbackEnabled: true,
+      stepCompleted: 'Target Configuration',
+    },
+    updateConfigSection: {
+      sectionId: 'security',
+      status: 'success',
+      values: {
+        'Encryption': 'AES-256',
+        'Authentication': 'IAM + password',
+        'Public access': 'Disabled',
+        'VPC': 'Default VPC',
+      },
+    },
+    updateStep: { stepId: 'target-config', status: 'success' },
+    delay: 1500,
+  },
+
+  // ===== MIGRATION SETTINGS =====
+  // Step 13: Migration settings recommendation
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Target database ready! Now let's configure migration settings:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MIGRATION CONFIGURATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Data scope: All 24 tables
+• Migration type: Full load + CDC (continuous replication)
+• Auto-partitioning: Enabled for large tables
+• Parallel threads: 4 (optimized for your instance)
+• LOB handling: Limited LOB mode (faster)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ESTIMATED TIMELINE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Schema migration: ~5 minutes
+• Data migration: ~2 hours
+• CDC activation: Immediate after full load
+
+Would you like to modify these settings?`,
       feedbackEnabled: true,
     },
-    updateStep: { stepId: 'configure', status: 'success' },
+    updateStep: { stepId: 'migration-settings', status: 'in-progress' },
+    prompts: [
+      { id: 'migration-settings-confirm', text: 'Use recommended settings' },
+      { id: 'migration-select-tables', text: 'Select specific tables' },
+      { id: 'migration-change-type', text: 'Change migration type' },
+    ],
     delay: 2000,
   },
-  // Step 7: Phase 3
+  // Step 14: Schedule selection
   {
     agentMessage: {
       type: 'agent',
-      content: `Phase 3: Data Migration
-
-Transferring data to Aurora DSQL...
-
-Progress: 78% complete
-• users: ✓ Complete (1.2M rows)
-• orders: ✓ Complete (5.8M rows)
-• products: ✓ Complete (45K rows)
-• inventory: Loading... (2.1M rows)`,
+      content: `When would you like to start the migration?`,
+      feedbackEnabled: true,
     },
-    updateStep: { stepId: 'build', status: 'in-progress' },
+    prompts: [
+      { id: 'schedule-now', text: 'Start now' },
+      { id: 'schedule-tonight', text: 'Tonight at 11 PM (off-peak)' },
+      { id: 'schedule-weekend', text: 'This weekend' },
+      { id: 'schedule-custom', text: 'Custom time' },
+    ],
+    delay: 1000,
+  },
+
+  // ===== REVIEW & START =====
+  // Step 15: Pre-flight checks
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Running pre-flight checks before starting migration...`,
+    },
+    updateStep: { stepId: 'migration-settings', status: 'success' },
+    delay: 800,
+  },
+  // Step 16: Pre-flight results
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Pre-flight verification complete:
+
+✓ Source connection: Verified
+✓ Target connection: Verified
+✓ Network connectivity: Verified
+✓ Migration permissions: Verified
+✓ Schema compatibility: 24/24 tables compatible
+✓ Data types: All supported
+✓ Storage capacity: Sufficient
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MIGRATION SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Source: ecommerce_prod on i-0abc123def
+• Target: ecommerce-aurora (Aurora DSQL)
+• Data: 45 GB across 24 tables
+• Estimated time: ~2 hours
+• Schedule: Starting now
+• CDC: Will be enabled after full load
+
+Ready to start the migration?`,
+      feedbackEnabled: true,
+      actions: [
+        { id: 'start-migration', label: 'Start migration', variant: 'primary' },
+        { id: 'review-warnings', label: 'Review details' },
+      ],
+    },
+    updateStep: { stepId: 'review-start', status: 'in-progress' },
     delay: 2500,
   },
-  // Step 8: Migration complete status
+  // Step 17: Migration started - transition to review and show migration progress
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Migration started! Migrating schema first...`,
+    },
+    transitionView: 'review',
+    // Reset config sections to show migration progress with migration-specific titles
+    updateConfigSections: [
+      {
+        sectionId: 'cluster',
+        title: 'Migration Overview',
+        status: 'in-progress',
+        values: {
+          'Migration Phase': 'Schema Migration',
+          'Status': 'In Progress',
+          'Source': 'i-0abc123def (ecommerce_prod)',
+          'Target': 'ecommerce-aurora',
+        },
+      },
+      {
+        sectionId: 'instance',
+        title: 'Schema Migration',
+        status: 'pending',
+        values: {
+          'Tables': '0/24',
+          'Indexes': '0/42',
+          'Foreign Keys': '0/18',
+          'Sequences': '0/8',
+        },
+      },
+      {
+        sectionId: 'storage',
+        title: 'Data Migration',
+        status: 'pending',
+        values: {
+          'Records Migrated': '0',
+          'Data Transferred': '0 GB',
+          'Progress': '0%',
+        },
+      },
+      {
+        sectionId: 'security',
+        title: 'Validation & CDC',
+        status: 'pending',
+        values: {
+          'CDC Status': 'Pending',
+          'Replication Lag': '-',
+          'Validation': 'Pending',
+        },
+      },
+    ],
+    delay: 800,
+  },
+  // Step 18: Schema migration
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Schema Migration:
+
+✓ Tables created: 24/24
+✓ Indexes created: 42/42
+✓ Foreign keys: 18/18
+✓ Sequences configured: 8/8
+
+Starting data migration...`,
+      feedbackEnabled: true,
+    },
+    updateConfigSections: [
+      {
+        sectionId: 'cluster',
+        status: 'success',
+        values: {
+          'Migration Phase': 'Data Migration',
+          'Status': 'In Progress',
+          'Source': 'i-0abc123def (ecommerce_prod)',
+          'Target': 'ecommerce-aurora',
+        },
+      },
+      {
+        sectionId: 'instance',
+        status: 'success',
+        values: {
+          'Tables': '24/24 ✓',
+          'Indexes': '42/42 ✓',
+          'Foreign Keys': '18/18 ✓',
+          'Sequences': '8/8 ✓',
+        },
+      },
+      {
+        sectionId: 'storage',
+        status: 'in-progress',
+        values: {
+          'Records Migrated': '0',
+          'Data Transferred': '0 GB',
+          'Progress': '0%',
+        },
+      },
+    ],
+    delay: 2000,
+  },
+  // Step 19: Data migration progress
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Data Migration in Progress:
+
+• users: ✓ Complete (1.2M rows)
+• products: ✓ Complete (45K rows)
+• orders: ✓ Complete (5.8M rows)
+• order_items: ✓ Complete (12.4M rows)
+• inventory: Loading... (2.1M rows)
+
+Progress: 85% complete`,
+    },
+    updateConfigSections: [
+      {
+        sectionId: 'storage',
+        status: 'in-progress',
+        values: {
+          'Records Migrated': '19.4M / 21.5M',
+          'Data Transferred': '38 GB / 45 GB',
+          'Progress': '85%',
+        },
+      },
+    ],
+    delay: 2500,
+  },
+  // Step 20: Migration complete status
   {
     agentMessage: {
       type: 'status',
-      content: `Data migration complete! CDC is active for ongoing changes. Click complete to finalize and run validation.`,
+      content: `Data migration complete! CDC replication is now active. Click complete to run final validation.`,
       actions: [
         { id: 'complete-migration', label: 'Complete & validate', variant: 'primary' },
       ],
     },
+    updateConfigSections: [
+      {
+        sectionId: 'storage',
+        status: 'success',
+        values: {
+          'Records Migrated': '21.5M ✓',
+          'Data Transferred': '45 GB ✓',
+          'Progress': '100%',
+        },
+      },
+      {
+        sectionId: 'security',
+        status: 'in-progress',
+        values: {
+          'CDC Status': 'Active',
+          'Replication Lag': '< 1 second',
+          'Validation': 'Pending',
+        },
+      },
+    ],
     delay: 2000,
   },
-  // Step 9: Validation & Completion
+  // Step 21: Validation results
   {
     agentMessage: {
       type: 'agent',
       content: `Migration completed successfully!
 
-Validation Results:
-✓ Row counts match: 9.1M rows
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VALIDATION RESULTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Row counts match: 21.5M total rows
 ✓ Data integrity verified
-✓ CDC replication active
+✓ Checksums validated
+✓ CDC replication active and synced
 ✓ No errors detected
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MIGRATION COMPLETE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Duration: 1 hour 47 minutes
+• Records migrated: 21.5M
+• Data transferred: 45 GB
+• CDC lag: < 1 second
 
 Your ecommerce database is now running on Aurora DSQL!`,
       feedbackEnabled: true,
     },
-    updateStep: { stepId: 'build', status: 'success' },
+    updateStep: { stepId: 'review-start', status: 'success' },
+    updateConfigSections: [
+      {
+        sectionId: 'cluster',
+        status: 'success',
+        values: {
+          'Migration Phase': 'Complete',
+          'Status': 'Success ✓',
+          'Source': 'i-0abc123def (ecommerce_prod)',
+          'Target': 'ecommerce-aurora',
+        },
+      },
+      {
+        sectionId: 'security',
+        status: 'success',
+        values: {
+          'CDC Status': 'Active ✓',
+          'Replication Lag': '< 1 second',
+          'Validation': 'Passed ✓',
+        },
+      },
+    ],
     createResource: {
       id: 'ecommerce-aurora-001',
       name: 'ecommerce-aurora - us-east-1',
@@ -1890,25 +2485,12 @@ Your ecommerce database is now running on Aurora DSQL!`,
       status: 'active',
       endpoint: 'ecommerce-aurora.dsql.us-east-1.on.aws',
       details: {
-        'Source': 'ec2-postgres.example.com',
-        'Records Migrated': '9.1M',
+        'Source': 'i-0abc123def (ecommerce_prod)',
+        'Records Migrated': '21.5M',
         'CDC Status': 'Active',
       },
     },
-    delay: 2000,
-  },
-  // Step 10: What's next
-  {
-    agentMessage: {
-      type: 'agent',
-      content: `What would you like to do next?`,
-    },
-    prompts: [
-      { id: 'cutover', text: 'Plan cutover' },
-      { id: 'verify', text: 'Run more validations' },
-      { id: 'dashboard', text: 'View dashboard' },
-    ],
-    delay: 800,
+    delay: 2500,
   },
 ];
 
@@ -1935,8 +2517,17 @@ function getDemoScript(workflowId: string | undefined): DemoStep[] {
   }
 }
 
-// Set the demo path
-function setDemoPath(path: 'new' | 'clone' | 'migrate' | 'configure') {
+// Migration-specific workflow steps
+const MIGRATION_WORKFLOW_STEPS = [
+  { id: 'source-discovery', title: 'Source Discovery' },
+  { id: 'connection-setup', title: 'Connection Setup' },
+  { id: 'target-config', title: 'Target Configuration' },
+  { id: 'migration-settings', title: 'Migration Settings' },
+  { id: 'review-start', title: 'Review & Start' },
+];
+
+// Set the demo path (module level for script access)
+function setDemoPathInternal(path: 'new' | 'clone' | 'migrate' | 'configure') {
   currentDemoPath = path;
 }
 
@@ -1980,6 +2571,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   const setNavigateCallback = useCallback((callback: (path: string) => void) => {
     navigateRef.current = callback;
+  }, []);
+
+  // Set demo path and update workflow steps if needed
+  const setDemoPath = useCallback((path: 'new' | 'clone' | 'migrate' | 'configure') => {
+    setDemoPathInternal(path);
+
+    // Update workflow steps for migration path
+    if (path === 'migrate') {
+      setWorkflow(prev => ({
+        ...prev,
+        steps: MIGRATION_WORKFLOW_STEPS.map(s => ({ ...s, status: 'pending' as StepStatus })),
+      }));
+    }
   }, []);
 
   // Add a message to the chat
@@ -2045,6 +2649,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           newConfigSections[update.sectionId] = {
             ...newConfigSections[update.sectionId],
             status: update.status,
+            title: update.title || newConfigSections[update.sectionId].title,
             values: update.values || newConfigSections[update.sectionId].values,
           };
         }
@@ -2207,6 +2812,50 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       // Check if there's a prompt-specific response
       const promptResponse = PROMPT_RESPONSES[promptId];
+
+      // If promptResponse exists but has empty message, advance the script with potential auto-chaining
+      if (promptResponse && promptResponse.message === '') {
+        runNextStep();
+
+        // Database selection prompts - auto-advance through analyzing → analysis results → target recommendation
+        if (promptId === 'db-ecommerce' || promptId === 'db-analytics' || promptId === 'db-manual') {
+          const runAnalysisSequence = async () => {
+            // Step 6: Analysis results
+            await new Promise(r => setTimeout(r, 1500));
+            if (!isProcessingRef.current) {
+              isProcessingRef.current = true;
+              setIsAgentTyping(true);
+              await executeDemoStep(scriptStepRef.current);
+            }
+
+            // Step 7: Target recommendation (has prompts, will stop here)
+            await new Promise(r => setTimeout(r, 2500));
+            if (!isProcessingRef.current) {
+              isProcessingRef.current = true;
+              setIsAgentTyping(true);
+              await executeDemoStep(scriptStepRef.current);
+            }
+          };
+          runAnalysisSequence();
+        }
+
+        // Schedule selection - auto-advance through pre-flight checks → pre-flight results
+        if (promptId === 'schedule-now' || promptId === 'schedule-tonight' || promptId === 'schedule-weekend' || promptId === 'schedule-custom') {
+          const runPreFlightSequence = async () => {
+            // Step 16: Pre-flight results (has action button, will stop here)
+            await new Promise(r => setTimeout(r, 800));
+            if (!isProcessingRef.current) {
+              isProcessingRef.current = true;
+              setIsAgentTyping(true);
+              await executeDemoStep(scriptStepRef.current);
+            }
+          };
+          runPreFlightSequence();
+        }
+
+        return;
+      }
+
       if (promptResponse) {
         setIsAgentTyping(true);
 
@@ -2475,34 +3124,96 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       };
 
       runCloneCompletionSequence();
+    } else if (actionId === 'migration-user-created' || actionId === 'copy-scripts') {
+      // User has created the migration user or wants to copy scripts
+      // Advance to next step (Step 2: credentials) then auto-advance through connection
+      runNextStep();
+
+      // Auto-advance through credentials → connecting → discover databases (Steps 2-4)
+      const runConnectionSequence = async () => {
+        // Step 3: Connecting
+        await new Promise(r => setTimeout(r, 1500));
+        if (!isProcessingRef.current) {
+          isProcessingRef.current = true;
+          setIsAgentTyping(true);
+          await executeDemoStep(scriptStepRef.current);
+        }
+
+        // Step 4: Discover databases (has prompts, will stop here)
+        await new Promise(r => setTimeout(r, 1200));
+        if (!isProcessingRef.current) {
+          isProcessingRef.current = true;
+          setIsAgentTyping(true);
+          await executeDemoStep(scriptStepRef.current);
+        }
+      };
+
+      runConnectionSequence();
+    } else if (actionId === 'create-target' || actionId === 'customize-target') {
+      // User clicked to create target database - run target creation sequence (Steps 8-12)
+      runNextStep();
+
+      const runTargetCreationSequence = async () => {
+        // Step 9: Cluster complete
+        await new Promise(r => setTimeout(r, 1000));
+        if (!isProcessingRef.current) {
+          isProcessingRef.current = true;
+          setIsAgentTyping(true);
+          await executeDemoStep(scriptStepRef.current);
+        }
+
+        // Step 10: Instance complete
+        await new Promise(r => setTimeout(r, 1500));
+        if (!isProcessingRef.current) {
+          isProcessingRef.current = true;
+          setIsAgentTyping(true);
+          await executeDemoStep(scriptStepRef.current);
+        }
+
+        // Step 11: Storage complete
+        await new Promise(r => setTimeout(r, 1500));
+        if (!isProcessingRef.current) {
+          isProcessingRef.current = true;
+          setIsAgentTyping(true);
+          await executeDemoStep(scriptStepRef.current);
+        }
+
+        // Step 12: Security complete (has stepCompleted divider, then continues to migration settings)
+        await new Promise(r => setTimeout(r, 1500));
+        if (!isProcessingRef.current) {
+          isProcessingRef.current = true;
+          setIsAgentTyping(true);
+          await executeDemoStep(scriptStepRef.current);
+        }
+
+        // Step 13: Migration settings (has prompts, will stop here)
+        await new Promise(r => setTimeout(r, 1500));
+        if (!isProcessingRef.current) {
+          isProcessingRef.current = true;
+          setIsAgentTyping(true);
+          await executeDemoStep(scriptStepRef.current);
+        }
+      };
+
+      runTargetCreationSequence();
     } else if (actionId === 'start-migration') {
-      // Transition to design view for migration
-      setWorkflow(prev => ({ ...prev, view: 'design' }));
+      // Start the actual migration process
+      // Note: Step 17 handles transitionView: 'review' and updates configSections for migration progress
       setIsDrawerOpen(true);
 
-      // Run migration sequence
+      // Run migration execution sequence (Steps 17-20)
       runNextStep();
 
       const runMigrationSequence = async () => {
-        // Wait for step 4 to complete
-        await new Promise(r => setTimeout(r, 2000));
-
-        // Step 5: Phase 1 progress
+        // Step 18: Schema migration
+        await new Promise(r => setTimeout(r, 1500));
         if (!isProcessingRef.current) {
           isProcessingRef.current = true;
           setIsAgentTyping(true);
           await executeDemoStep(scriptStepRef.current);
         }
 
-        // Wait then step 6: Phase 2
-        await new Promise(r => setTimeout(r, 3000));
-        if (!isProcessingRef.current) {
-          isProcessingRef.current = true;
-          setIsAgentTyping(true);
-          await executeDemoStep(scriptStepRef.current);
-        }
-
-        // Wait then step 7: Phase 3
+        // Step 19: Data migration progress
         await new Promise(r => setTimeout(r, 2500));
         if (!isProcessingRef.current) {
           isProcessingRef.current = true;
@@ -2510,8 +3221,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           await executeDemoStep(scriptStepRef.current);
         }
 
-        // Wait then step 8: Migration complete status
-        await new Promise(r => setTimeout(r, 3000));
+        // Step 20: Migration complete status (has action button, will stop here)
+        await new Promise(r => setTimeout(r, 2500));
         if (!isProcessingRef.current) {
           isProcessingRef.current = true;
           setIsAgentTyping(true);
@@ -2520,11 +3231,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       };
 
       runMigrationSequence();
+    } else if (actionId === 'review-warnings') {
+      // User wants to review details before starting - just acknowledge
+      addMessage({
+        type: 'agent',
+        content: `All pre-flight checks have passed. You can proceed with confidence.`,
+        feedbackEnabled: true,
+      });
     } else if (actionId === 'complete-migration') {
-      // Run migration completion sequence
+      // Run migration completion - show validation results
       runNextStep();
 
       const runMigrationCompletionSequence = async () => {
+        // Step 21: Validation results
         await new Promise(r => setTimeout(r, 2000));
         if (!isProcessingRef.current) {
           isProcessingRef.current = true;
@@ -2543,23 +3262,40 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           endpoint: 'ecommerce-aurora.dsql.us-east-1.on.aws',
           createdAt: new Date(),
           connections: 0,
-          tags: { Environment: 'Production', Source: 'EC2 PostgreSQL', 'Migration Status': 'Complete' },
+          tags: { Environment: 'Production', Source: 'EC2 PostgreSQL', 'Migration Status': 'Complete', 'CDC': 'Active' },
         });
 
         // Add activity
         addActivityRef.current({
           type: 'database_created',
           title: 'Database migration completed',
-          description: 'ecommerce-aurora migrated from EC2 PostgreSQL',
+          description: 'ecommerce-aurora migrated from EC2 PostgreSQL (21.5M rows)',
           resourceId: 'ecommerce-aurora',
           resourceName: 'ecommerce-aurora',
         });
 
-        // Navigate to database details page after completion
-        await new Promise(r => setTimeout(r, 1000));
+        // Navigate to database details page
         if (navigateRef.current) {
           navigateRef.current('/database-details');
         }
+
+        // Add agent message asking what to do next with contextual prompts
+        await new Promise(r => setTimeout(r, 800));
+        setIsAgentTyping(true);
+        await new Promise(r => setTimeout(r, 600));
+        setIsAgentTyping(false);
+        addMessage({
+          type: 'agent',
+          content: 'What would you like to do next?',
+          feedbackEnabled: true,
+        });
+        setCurrentPrompts([
+          { id: 'plan-cutover', text: 'Plan application cutover' },
+          { id: 'verify-data', text: 'Run additional validations' },
+          { id: 'view-cdc-status', text: 'View CDC replication status' },
+          { id: 'view-database', text: 'View database details' },
+        ]);
+        setShowPrompts(true);
       };
 
       runMigrationCompletionSequence();
