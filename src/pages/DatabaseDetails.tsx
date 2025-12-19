@@ -5,7 +5,6 @@ import Box from '@cloudscape-design/components/box';
 import SpaceBetween from '@cloudscape-design/components/space-between';
 import Container from '@cloudscape-design/components/container';
 import Header from '@cloudscape-design/components/header';
-import Icon from '@cloudscape-design/components/icon';
 import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import ColumnLayout from '@cloudscape-design/components/column-layout';
 import Tabs from '@cloudscape-design/components/tabs';
@@ -33,61 +32,30 @@ export default function DatabaseDetails() {
   }
 
   const resource = workflow.resource;
+  const configSections = workflow.configSections;
 
   return (
     <div style={{ padding: '0' }}>
       <SpaceBetween size="l">
-        {/* Header Card */}
-        <div style={{
-          backgroundColor: 'var(--color-background-container-content)',
-          borderLeft: '4px solid var(--color-border-status-success)',
-          borderRadius: '4px',
-          padding: '16px 24px',
-          boxShadow: '0 0 12px rgba(0, 128, 64, 0.15)',
-        }}>
-          <SpaceBetween size="xs">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Icon name="settings" variant="success" />
-              <Box variant="h2" fontSize="heading-l">
-                {resource.name}
-              </Box>
-            </div>
-          </SpaceBetween>
-        </div>
+        {/* Header */}
+        <Header
+          variant="h1"
+          actions={
+            <SpaceBetween direction="horizontal" size="xs">
+              <Button>Edit</Button>
+              <Button>Delete</Button>
+              <Button variant="primary">Actions</Button>
+            </SpaceBetween>
+          }
+        >
+          {resource.name.split(' - ')[0]}
+        </Header>
 
         {/* Cluster Overview */}
         <Container
-          header={
-            <Header
-              variant="h2"
-              actions={
-                <SpaceBetween direction="horizontal" size="xs">
-                  <Button>Edit</Button>
-                  <Button variant="primary">Actions</Button>
-                </SpaceBetween>
-              }
-            >
-              Cluster overview
-            </Header>
-          }
+          header={<Header variant="h2">Cluster overview</Header>}
         >
           <ColumnLayout columns={4} variant="text-grid">
-            <div>
-              <Box color="text-body-secondary" fontSize="body-s">Tag: Name</Box>
-              <Box>{resource.name.split(' - ')[0]}</Box>
-            </div>
-            <div>
-              <Box color="text-body-secondary" fontSize="body-s">Amazon Resource Name (ARN)</Box>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <CopyToClipboard
-                  copyButtonAriaLabel="Copy ARN"
-                  copyErrorText="ARN failed to copy"
-                  copySuccessText="ARN copied"
-                  textToCopy={`arn:aws:dsql:${resource.region}:123456789:cluster/${resource.id}`}
-                  variant="inline"
-                />
-              </div>
-            </div>
             <div>
               <Box color="text-body-secondary" fontSize="body-s">Status</Box>
               <StatusIndicator type={resource.status === 'active' ? 'success' : 'loading'}>
@@ -95,17 +63,23 @@ export default function DatabaseDetails() {
               </StatusIndicator>
             </div>
             <div>
-              <Box color="text-body-secondary" fontSize="body-s">Public endpoint</Box>
+              <Box color="text-body-secondary" fontSize="body-s">Engine</Box>
+              <Box>{configSections.cluster.values['Engine'] || resource.type}</Box>
+            </div>
+            <div>
+              <Box color="text-body-secondary" fontSize="body-s">Region</Box>
+              <Box>{configSections.cluster.values['Region'] || resource.region}</Box>
+            </div>
+            <div>
+              <Box color="text-body-secondary" fontSize="body-s">Endpoint</Box>
               {resource.endpoint ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <CopyToClipboard
-                    copyButtonAriaLabel="Copy endpoint"
-                    copyErrorText="Endpoint failed to copy"
-                    copySuccessText="Endpoint copied"
-                    textToCopy={resource.endpoint}
-                    variant="inline"
-                  />
-                </div>
+                <CopyToClipboard
+                  copyButtonAriaLabel="Copy endpoint"
+                  copyErrorText="Endpoint failed to copy"
+                  copySuccessText="Endpoint copied"
+                  textToCopy={resource.endpoint}
+                  variant="inline"
+                />
               ) : (
                 <Box>-</Box>
               )}
@@ -113,18 +87,25 @@ export default function DatabaseDetails() {
           </ColumnLayout>
         </Container>
 
-        {/* Tabs */}
+        {/* Tabs with Configuration Details */}
         <Tabs
           tabs={[
             {
-              label: "Cluster settings",
-              id: "settings",
+              label: "Configuration",
+              id: "configuration",
               content: (
-                <Container>
-                  <ColumnLayout columns={4} variant="text-grid">
-                    <div>
-                      <Box color="text-body-secondary" fontSize="body-s">Cluster ID</Box>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <SpaceBetween size="l">
+                  {/* Cluster Configuration */}
+                  <Container header={<Header variant="h3">Cluster configuration</Header>}>
+                    <ColumnLayout columns={3} variant="text-grid">
+                      {Object.entries(configSections.cluster.values).map(([key, value]) => (
+                        <div key={key}>
+                          <Box color="text-body-secondary" fontSize="body-s">{key}</Box>
+                          <Box>{value}</Box>
+                        </div>
+                      ))}
+                      <div>
+                        <Box color="text-body-secondary" fontSize="body-s">Cluster ID</Box>
                         <CopyToClipboard
                           copyButtonAriaLabel="Copy cluster ID"
                           copyErrorText="ID failed to copy"
@@ -133,19 +114,89 @@ export default function DatabaseDetails() {
                           variant="inline"
                         />
                       </div>
+                      <div>
+                        <Box color="text-body-secondary" fontSize="body-s">ARN</Box>
+                        <CopyToClipboard
+                          copyButtonAriaLabel="Copy ARN"
+                          copyErrorText="ARN failed to copy"
+                          copySuccessText="ARN copied"
+                          textToCopy={`arn:aws:dsql:${resource.region}:123456789:cluster/${resource.id}`}
+                          variant="inline"
+                        />
+                      </div>
+                    </ColumnLayout>
+                  </Container>
+
+                  {/* Instance Configuration */}
+                  <Container header={<Header variant="h3">Instance</Header>}>
+                    <ColumnLayout columns={4} variant="text-grid">
+                      {Object.entries(configSections.instance.values).map(([key, value]) => (
+                        <div key={key}>
+                          <Box color="text-body-secondary" fontSize="body-s">{key}</Box>
+                          <Box>{value}</Box>
+                        </div>
+                      ))}
+                    </ColumnLayout>
+                  </Container>
+
+                  {/* Storage & Performance */}
+                  <Container header={<Header variant="h3">Storage & Performance</Header>}>
+                    <ColumnLayout columns={3} variant="text-grid">
+                      {Object.entries(configSections.storage.values).map(([key, value]) => (
+                        <div key={key}>
+                          <Box color="text-body-secondary" fontSize="body-s">{key}</Box>
+                          <Box>{value}</Box>
+                        </div>
+                      ))}
+                    </ColumnLayout>
+                  </Container>
+
+                  {/* Security */}
+                  <Container header={<Header variant="h3">Security</Header>}>
+                    <ColumnLayout columns={4} variant="text-grid">
+                      {Object.entries(configSections.security.values).map(([key, value]) => (
+                        <div key={key}>
+                          <Box color="text-body-secondary" fontSize="body-s">{key}</Box>
+                          <Box>{value}</Box>
+                        </div>
+                      ))}
+                    </ColumnLayout>
+                  </Container>
+                </SpaceBetween>
+              ),
+            },
+            {
+              label: "Connectivity",
+              id: "connectivity",
+              content: (
+                <Container>
+                  <ColumnLayout columns={2} variant="text-grid">
+                    <div>
+                      <Box color="text-body-secondary" fontSize="body-s">Public endpoint</Box>
+                      {resource.endpoint ? (
+                        <CopyToClipboard
+                          copyButtonAriaLabel="Copy endpoint"
+                          copyErrorText="Endpoint failed to copy"
+                          copySuccessText="Endpoint copied"
+                          textToCopy={resource.endpoint}
+                          variant="inline"
+                        />
+                      ) : (
+                        <Box>-</Box>
+                      )}
                     </div>
                     <div>
-                      <Box color="text-body-secondary" fontSize="body-s">Engine</Box>
-                      <Box>{resource.details?.['Engine'] || resource.type}</Box>
+                      <Box color="text-body-secondary" fontSize="body-s">Port</Box>
+                      <Box>5432</Box>
                     </div>
                     <div>
-                      <Box color="text-body-secondary" fontSize="body-s">Deletion protection</Box>
-                      <StatusIndicator type="success">Enabled</StatusIndicator>
+                      <Box color="text-body-secondary" fontSize="body-s">VPC</Box>
+                      <Box>{configSections.security.values['VPC'] || 'Default VPC'}</Box>
                     </div>
                     <div>
-                      <Box color="text-body-secondary" fontSize="body-s">Auto-scaling</Box>
-                      <StatusIndicator type="success">
-                        {resource.details?.['Auto-scaling'] || 'Enabled'}
+                      <Box color="text-body-secondary" fontSize="body-s">Public access</Box>
+                      <StatusIndicator type="stopped">
+                        {configSections.security.values['Public access'] || 'Disabled'}
                       </StatusIndicator>
                     </div>
                   </ColumnLayout>
@@ -153,23 +204,12 @@ export default function DatabaseDetails() {
               ),
             },
             {
-              label: "Peers",
-              id: "peers",
+              label: "Monitoring",
+              id: "monitoring",
               content: (
                 <Container>
                   <Box textAlign="center" color="text-body-secondary" padding="l">
-                    No peer connections configured
-                  </Box>
-                </Container>
-              ),
-            },
-            {
-              label: "Permissions",
-              id: "permissions",
-              content: (
-                <Container>
-                  <Box textAlign="center" color="text-body-secondary" padding="l">
-                    Default permissions applied
+                    Monitoring data will appear here once the database has been running for a few minutes.
                   </Box>
                 </Container>
               ),
@@ -179,9 +219,16 @@ export default function DatabaseDetails() {
               id: "tags",
               content: (
                 <Container>
-                  <Box textAlign="center" color="text-body-secondary" padding="l">
-                    No tags configured
-                  </Box>
+                  <ColumnLayout columns={2} variant="text-grid">
+                    <div>
+                      <Box color="text-body-secondary" fontSize="body-s">Environment</Box>
+                      <Box>Production</Box>
+                    </div>
+                    <div>
+                      <Box color="text-body-secondary" fontSize="body-s">Application</Box>
+                      <Box>Food Delivery</Box>
+                    </div>
+                  </ColumnLayout>
                 </Container>
               ),
             },

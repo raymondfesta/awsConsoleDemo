@@ -58,12 +58,19 @@ function AppContent() {
     setNavigateCallback(navigate);
   }, [navigate, setNavigateCallback]);
 
-  // End workflow when navigating away from workflow pages
+  // Handle workflow pages - close navigation and end workflow when leaving
   useEffect(() => {
     const isWorkflowPage = location.pathname.startsWith('/create-database') ||
-                           location.pathname.startsWith('/import-data') ||
-                           location.pathname.startsWith('/database-details');
-    if (!isWorkflowPage) {
+                           location.pathname.startsWith('/import-data');
+    const isWorkflowRelatedPage = isWorkflowPage || location.pathname.startsWith('/database-details');
+
+    // Close navigation on workflow pages
+    if (isWorkflowPage) {
+      setNavigationOpen(false);
+    }
+
+    // End workflow when navigating away from workflow-related pages
+    if (!isWorkflowRelatedPage) {
       endWorkflow();
     }
   }, [location.pathname, endWorkflow]);

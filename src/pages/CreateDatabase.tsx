@@ -1,19 +1,17 @@
 import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useChatContext, type WorkflowConfig, type Message } from '../context/ChatContext';
 import Box from '@cloudscape-design/components/box';
 import SpaceBetween from '@cloudscape-design/components/space-between';
 import Tiles from '@cloudscape-design/components/tiles';
 import PromptInput from '@cloudscape-design/components/prompt-input';
-import Container from '@cloudscape-design/components/container';
-import Icon from '@cloudscape-design/components/icon';
-import Link from '@cloudscape-design/components/link';
-import StatusIndicator from '@cloudscape-design/components/status-indicator';
-import ColumnLayout from '@cloudscape-design/components/column-layout';
-import Steps from '@cloudscape-design/components/steps';
 import Button from '@cloudscape-design/components/button';
 import ButtonGroup from '@cloudscape-design/components/button-group';
 import Alert from '@cloudscape-design/components/alert';
+import Steps from '@cloudscape-design/components/steps';
+import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import { SupportPromptGroup, ChatBubble, Avatar, LoadingBar } from '@cloudscape-design/chat-components';
+import ConfigurationDisplay from '../components/ConfigurationDisplay';
 
 // Prompts for "Create new" option
 const CREATE_NEW_PROMPTS = [
@@ -39,7 +37,7 @@ const PROMPT_TO_DEMO_PATH: Record<string, 'new' | 'clone' | 'migrate'> = {
   'migrate-ec2': 'migrate',
 };
 
-// Workflow configuration
+// Workflow configuration with 3 steps
 const CREATE_DATABASE_CONFIG: WorkflowConfig = {
   id: 'create-database',
   title: 'Create database',
@@ -58,23 +56,15 @@ const CREATE_DATABASE_CONFIG: WorkflowConfig = {
   ],
   initialPrompts: CREATE_NEW_PROMPTS,
   steps: [
-    { id: 'configure', title: 'Configure' },
-    { id: 'build', title: 'Build' },
+    { id: 'context-requirements', title: 'Context and requirements' },
+    { id: 'db-design', title: 'DB Design' },
+    { id: 'review-finish', title: 'Review and finish' },
   ],
   placeholder: 'Describe what you are trying to build. A good description should include an application overview, data requirements, and key use cases.',
 };
 
-// Map status to Steps component status
-function mapStepStatus(status: string): 'pending' | 'loading' | 'success' | 'error' {
-  switch (status) {
-    case 'in-progress': return 'loading';
-    case 'success': return 'success';
-    case 'error': return 'error';
-    default: return 'pending';
-  }
-}
-
 export default function CreateDatabase() {
+  useNavigate(); // Keep for potential future navigation
   const {
     workflow,
     messages,
@@ -120,13 +110,11 @@ export default function CreateDatabase() {
   const handleSubmit = () => {
     if (promptValue.trim() && !isAgentTyping) {
       // Set demo path based on selected option
-      // If "create-existing" is selected, default to 'clone' for custom messages
       if (workflow.selectedOption === 'create-existing') {
         setDemoPath('clone');
       } else {
         setDemoPath('new');
       }
-      // Send the message (this will trigger the demo flow and transition to chat view)
       sendMessage(promptValue.trim());
       setPromptValue('');
     }
@@ -149,14 +137,11 @@ export default function CreateDatabase() {
   };
 
   const handlePromptClick = (promptId: string) => {
-    // Find prompt in either list
     const allPrompts = [...CREATE_NEW_PROMPTS, ...CREATE_EXISTING_PROMPTS];
     const prompt = allPrompts.find(p => p.id === promptId);
     if (prompt) {
-      // Set the demo path based on the prompt
       const demoPath = PROMPT_TO_DEMO_PATH[promptId] || 'new';
       setDemoPath(demoPath);
-      // Send the message directly to start the conversation
       sendMessage(prompt.text);
     }
   };
@@ -169,9 +154,23 @@ export default function CreateDatabase() {
     triggerAction(actionId);
   };
 
+
+  // Get the current step title for the configuration display
+  const getDesignTitle = () => {
+    if (workflow.view === 'review') {
+      return 'Review and finish';
+    }
+    if (workflow.path === 'customize') {
+      return 'DB Design - customize';
+    }
+    if (workflow.path === 'auto-setup') {
+      return 'DB Design - Auto setup';
+    }
+    return 'DB Design';
+  };
+
   // Render a single message
   const renderMessage = (message: Message) => {
-    // Status or Error messages use Alert component
     if (message.type === 'status' || message.type === 'error') {
       return (
         <Alert
@@ -198,7 +197,6 @@ export default function CreateDatabase() {
       );
     }
 
-    // User messages
     if (message.type === 'user') {
       return (
         <ChatBubble
@@ -212,9 +210,32 @@ export default function CreateDatabase() {
       );
     }
 
-    // Agent messages with optional actions
     return (
       <div key={message.id}>
+        {/* Show step completed divider with status indicator */}
+        {message.stepCompleted && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            margin: '20px 0',
+          }}>
+            <div style={{
+              flex: 1,
+              height: '1px',
+              backgroundColor: '#e9ebed',
+            }} />
+            <StatusIndicator type="success">
+              {message.stepCompleted}
+            </StatusIndicator>
+            <div style={{
+              flex: 1,
+              height: '1px',
+              backgroundColor: '#e9ebed',
+            }} />
+          </div>
+        )}
+
         <ChatBubble
           type="incoming"
           ariaLabel="Agent said"
@@ -240,10 +261,23 @@ export default function CreateDatabase() {
             ) : undefined
           }
         >
-          <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
+          {/* Render build progress items with status indicators */}
+          {message.buildProgress ? (
+            <SpaceBetween size="xs">
+              {message.buildProgress.map((item, index) => (
+                <StatusIndicator
+                  key={index}
+                  type={item.status === 'success' ? 'success' : item.status === 'error' ? 'error' : 'in-progress'}
+                >
+                  {item.label}
+                </StatusIndicator>
+              ))}
+            </SpaceBetween>
+          ) : (
+            <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
+          )}
         </ChatBubble>
 
-        {/* Inline action buttons for agent messages */}
         {message.actions && message.actions.length > 0 && (
           <Box margin={{ top: 's', left: 'xxxl' }}>
             <SpaceBetween direction="horizontal" size="xs">
@@ -263,6 +297,68 @@ export default function CreateDatabase() {
     );
   };
 
+  // Render chat panel (reusable for split view)
+  const renderChatPanel = (compact = false) => (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      width: compact ? '364px' : '100%',
+      minWidth: compact ? '320px' : undefined,
+    }}>
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        marginBottom: '16px',
+      }}>
+        <SpaceBetween size="s">
+          {messages.map(renderMessage)}
+
+          {showPrompts && currentPrompts.length > 0 && !isAgentTyping && (
+            <div style={{ marginLeft: compact ? '0' : '48px' }}>
+              <SupportPromptGroup
+                ariaLabel="Suggested actions"
+                alignment="horizontal"
+                onItemClick={({ detail }) => handleChatPromptClick(detail.id)}
+                items={currentPrompts.map((prompt) => ({
+                  id: prompt.id,
+                  text: prompt.text,
+                }))}
+              />
+            </div>
+          )}
+
+          {isAgentTyping && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Avatar
+                color="gen-ai"
+                iconName="gen-ai"
+                ariaLabel="AI Assistant"
+              />
+              <div style={{ flex: 1, maxWidth: '200px' }}>
+                <LoadingBar variant="gen-ai" />
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </SpaceBetween>
+      </div>
+
+      <PromptInput
+        value={promptValue}
+        onChange={({ detail }) => setPromptValue(detail.value)}
+        onAction={handleSubmit}
+        placeholder="Chat"
+        actionButtonAriaLabel="Send message"
+        actionButtonIconName="send"
+        disabled={isAgentTyping}
+        minRows={1}
+        maxRows={4}
+      />
+    </div>
+  );
+
   // Entry View
   if (workflow.view === 'entry') {
     return (
@@ -272,7 +368,6 @@ export default function CreateDatabase() {
         padding: '40px 20px',
       }}>
         <SpaceBetween size="l">
-          {/* Title */}
           <Box textAlign="center">
             <Box variant="h1" fontSize="display-l" fontWeight="light">
               {CREATE_DATABASE_CONFIG.title}
@@ -282,7 +377,6 @@ export default function CreateDatabase() {
             </Box>
           </Box>
 
-          {/* Option Tiles */}
           <Tiles
             onChange={({ detail }) => selectWorkflowOption(detail.value)}
             value={workflow.selectedOption}
@@ -294,7 +388,6 @@ export default function CreateDatabase() {
             columns={2}
           />
 
-          {/* Prompt Input with larger rows for entry */}
           <PromptInput
             value={promptValue}
             onChange={({ detail }) => setPromptValue(detail.value)}
@@ -306,7 +399,6 @@ export default function CreateDatabase() {
             maxRows={8}
           />
 
-          {/* Support Prompts - only show when a tile is selected */}
           {workflow.selectedOption && (
             <SupportPromptGroup
               ariaLabel="Quick start suggestions"
@@ -323,180 +415,113 @@ export default function CreateDatabase() {
     );
   }
 
-  // Chat View (centered conversation during Configure phase)
+  // Chat View (Step 1: Context and Requirements - centered conversation)
   if (workflow.view === 'chat') {
+    // Map workflow steps to Steps component format
+    const stepsItems = workflow.steps.map((step, index) => {
+      let status: 'pending' | 'loading' | 'success' | 'error' = 'pending';
+
+      if (step.status === 'success') {
+        status = 'success';
+      } else if (step.status === 'in-progress') {
+        status = 'loading';
+      } else if (step.status === 'error') {
+        status = 'error';
+      } else if (index === 0) {
+        status = 'loading'; // First step is always in progress during chat
+      }
+
+      return {
+        header: step.title,
+        status,
+        statusIconAriaLabel: status,
+      };
+    });
+
     return (
       <div style={{
-        maxWidth: '800px',
-        margin: '0 auto',
-        padding: '40px 20px',
         display: 'flex',
-        flexDirection: 'column',
-        height: 'calc(100vh - 160px)',
+        gap: '40px',
+        padding: '40px 20px',
+        maxWidth: '1200px',
+        margin: '0 auto',
       }}>
-        {/* Messages area */}
-        <div style={{
-          flex: 1,
-          overflowY: 'auto',
-          marginBottom: '16px',
-        }}>
-          <SpaceBetween size="m">
-            {messages.map(renderMessage)}
-
-            {/* Support prompts - appear under last agent message */}
-            {showPrompts && currentPrompts.length > 0 && !isAgentTyping && (
-              <div style={{ marginLeft: '48px' }}>
-                <SupportPromptGroup
-                  ariaLabel="Suggested actions"
-                  alignment="horizontal"
-                  onItemClick={({ detail }) => handleChatPromptClick(detail.id)}
-                  items={currentPrompts.map((prompt) => ({
-                    id: prompt.id,
-                    text: prompt.text,
-                  }))}
-                />
-              </div>
-            )}
-
-            {/* Loading indicator */}
-            {isAgentTyping && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <Avatar
-                  color="gen-ai"
-                  iconName="gen-ai"
-                  ariaLabel="AI Assistant"
-                />
-                <div style={{ flex: 1, maxWidth: '200px' }}>
-                  <LoadingBar variant="gen-ai" />
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </SpaceBetween>
+        {/* Left: Steps indicator */}
+        <div style={{ width: '200px', flexShrink: 0 }}>
+          <Steps
+            steps={stepsItems}
+            ariaLabel="Database creation progress"
+          />
         </div>
 
-        {/* Input area */}
-        <PromptInput
-          value={promptValue}
-          onChange={({ detail }) => setPromptValue(detail.value)}
-          onAction={handleSubmit}
-          placeholder="Describe what you need help with..."
-          actionButtonAriaLabel="Send message"
-          actionButtonIconName="send"
-          disabled={isAgentTyping}
-          minRows={3}
-          maxRows={8}
-        />
+        {/* Right: Main content */}
+        <div style={{ flex: 1, maxWidth: '800px' }}>
+          <Box variant="h1" fontSize="heading-l" fontWeight="bold" margin={{ bottom: 'm' }}>
+            Context and requirements
+          </Box>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: 'calc(100vh - 240px)',
+          }}>
+            {renderChatPanel()}
+          </div>
+        </div>
       </div>
     );
   }
 
-  // Wizard View (when Build phase starts)
-  const resourceStatusType = workflow.resource?.status === 'active'
-    ? 'success'
-    : workflow.resource?.status === 'creating'
-      ? 'loading'
-      : 'error';
+  // Design View (Step 2) and Review View (Step 3) - Steps + Configuration
+  if (workflow.view === 'design' || workflow.view === 'review') {
+    // Map workflow steps to Steps component format
+    const stepsItems = workflow.steps.map((step, index) => {
+      const currentIndex = workflow.view === 'review' ? 2 : 1;
+      let status: 'pending' | 'loading' | 'success' | 'error' = 'pending';
 
-  const resourceStatusLabel = workflow.resource?.status === 'active'
-    ? 'Active'
-    : workflow.resource?.status === 'creating'
-      ? 'Creating...'
-      : 'Error';
+      if (step.status === 'success') {
+        status = 'success';
+      } else if (step.status === 'in-progress') {
+        status = 'loading';
+      } else if (step.status === 'error') {
+        status = 'error';
+      } else if (index < currentIndex) {
+        status = 'success';
+      }
 
-  return (
-    <div style={{ padding: '20px' }}>
-      <SpaceBetween size="l">
-        {/* Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '16px',
-          backgroundColor: 'var(--color-background-container-content)',
-          borderRadius: '8px',
-          border: '1px solid var(--color-border-divider-default)',
-        }}>
-          <Icon name="settings" variant="success" />
-          <Box variant="h2" fontSize="heading-m">
-            {workflow.selectedOption === 'create-existing' ? 'Create from existing' : 'Create new'}
-          </Box>
+      return {
+        header: step.title,
+        status,
+        statusIconAriaLabel: status,
+      };
+    });
+
+    return (
+      <div style={{
+        display: 'flex',
+        gap: '40px',
+        padding: '40px 20px',
+        maxWidth: '1200px',
+        margin: '0 auto',
+      }}>
+        {/* Left: Steps indicator */}
+        <div style={{ width: '200px', flexShrink: 0 }}>
+          <Steps
+            steps={stepsItems}
+            ariaLabel="Database creation progress"
+          />
         </div>
 
-        {/* Stepper */}
-        <Steps
-          steps={workflow.steps.map(step => ({
-            header: step.title,
-            status: mapStepStatus(step.status),
-            statusIconAriaLabel: `${step.title} ${step.status}`,
-          }))}
-        />
+        {/* Right: Configuration Display */}
+        <div style={{ flex: 1, maxWidth: '800px' }}>
+          <ConfigurationDisplay
+            title={getDesignTitle()}
+            configSections={workflow.configSections}
+          />
+        </div>
+      </div>
+    );
+  }
 
-        {/* Resource Card */}
-        {workflow.resource ? (
-          <Container>
-            <SpaceBetween size="m">
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-                <div style={{
-                  width: '48px',
-                  height: '48px',
-                  backgroundColor: 'var(--color-background-status-success)',
-                  borderRadius: '8px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                  <Icon name="settings" size="medium" variant="success" />
-                </div>
-
-                <div style={{ flex: 1 }}>
-                  <SpaceBetween size="xxs">
-                    <Box variant="h3">{workflow.resource.name}</Box>
-                    <Box color="text-body-secondary">{workflow.resource.type}</Box>
-                    <Link href="#" fontSize="body-s">
-                      <Icon name="external" size="small" /> Learn more
-                    </Link>
-                  </SpaceBetween>
-                </div>
-              </div>
-
-              <ColumnLayout columns={workflow.resource.details ? 3 : 2} variant="text-grid">
-                <div>
-                  <Box color="text-body-secondary" fontSize="body-s">Region</Box>
-                  <Box>{workflow.resource.region}</Box>
-                </div>
-                <div>
-                  <Box color="text-body-secondary" fontSize="body-s">Status</Box>
-                  <StatusIndicator type={resourceStatusType}>{resourceStatusLabel}</StatusIndicator>
-                </div>
-                {workflow.resource.endpoint && (
-                  <div>
-                    <Box color="text-body-secondary" fontSize="body-s">Endpoint</Box>
-                    <code style={{ fontSize: '12px' }}>{workflow.resource.endpoint}</code>
-                  </div>
-                )}
-                {workflow.resource.details && Object.entries(workflow.resource.details).map(([key, value]) => (
-                  <div key={key}>
-                    <Box color="text-body-secondary" fontSize="body-s">{key}</Box>
-                    <Box>{value}</Box>
-                  </div>
-                ))}
-              </ColumnLayout>
-            </SpaceBetween>
-          </Container>
-        ) : (
-          <Container>
-            <Box textAlign="center" color="text-body-secondary" padding="l">
-              <SpaceBetween size="s" alignItems="center">
-                <Icon name="status-pending" size="large" />
-                <Box>Waiting for configuration...</Box>
-                <Box fontSize="body-s">Use the chat panel to describe your requirements</Box>
-              </SpaceBetween>
-            </Box>
-          </Container>
-        )}
-      </SpaceBetween>
-    </div>
-  );
+  // Fallback
+  return null;
 }

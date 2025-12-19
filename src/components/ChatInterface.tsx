@@ -5,6 +5,7 @@ import Button from '@cloudscape-design/components/button';
 import ButtonGroup from '@cloudscape-design/components/button-group';
 import PromptInput from '@cloudscape-design/components/prompt-input';
 import Alert from '@cloudscape-design/components/alert';
+import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import { ChatBubble, Avatar, LoadingBar } from '@cloudscape-design/chat-components';
 import { SupportPromptGroup } from '@cloudscape-design/chat-components';
 import { useChatContext, type Message } from '../context/ChatContext';
@@ -105,6 +106,30 @@ export default function ChatInterface() {
     // Agent messages with optional actions
     return (
       <div key={message.id}>
+        {/* Show step completed divider with status indicator */}
+        {message.stepCompleted && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            margin: '20px 0',
+          }}>
+            <div style={{
+              flex: 1,
+              height: '1px',
+              backgroundColor: '#e9ebed',
+            }} />
+            <StatusIndicator type="success">
+              {message.stepCompleted}
+            </StatusIndicator>
+            <div style={{
+              flex: 1,
+              height: '1px',
+              backgroundColor: '#e9ebed',
+            }} />
+          </div>
+        )}
+
         <ChatBubble
           type="incoming"
           ariaLabel="Agent said"
@@ -130,7 +155,21 @@ export default function ChatInterface() {
             ) : undefined
           }
         >
-          <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
+          {/* Render build progress items with status indicators */}
+          {message.buildProgress ? (
+            <SpaceBetween size="xs">
+              {message.buildProgress.map((item, index) => (
+                <StatusIndicator
+                  key={index}
+                  type={item.status === 'success' ? 'success' : item.status === 'error' ? 'error' : 'in-progress'}
+                >
+                  {item.label}
+                </StatusIndicator>
+              ))}
+            </SpaceBetween>
+          ) : (
+            <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
+          )}
         </ChatBubble>
 
         {/* Inline action buttons for agent messages */}

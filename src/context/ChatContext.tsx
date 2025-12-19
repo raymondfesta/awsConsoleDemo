@@ -4,12 +4,39 @@ import { useAppStore } from './AppContext';
 // Types
 export type MessageType = 'user' | 'agent' | 'status' | 'error';
 export type StepStatus = 'pending' | 'in-progress' | 'success' | 'error';
-export type WorkflowView = 'entry' | 'chat' | 'wizard' | 'completion';
+export type WorkflowView = 'entry' | 'chat' | 'design' | 'review';
+export type WorkflowPath = 'customize' | 'auto-setup' | null;
+
+// Configuration section types
+export type ConfigSectionId = 'cluster' | 'instance' | 'storage' | 'security';
+
+export interface ConfigSectionValues {
+  [key: string]: string;
+}
+
+export interface ConfigSection {
+  id: ConfigSectionId;
+  title: string;
+  status: StepStatus;
+  values: ConfigSectionValues;
+}
+
+export interface ConfigurationState {
+  cluster: ConfigSection;
+  instance: ConfigSection;
+  storage: ConfigSection;
+  security: ConfigSection;
+}
 
 export interface MessageAction {
   id: string;
   label: string;
   variant?: 'primary' | 'normal';
+}
+
+export interface BuildProgressItem {
+  label: string;
+  status: 'pending' | 'success' | 'error';
 }
 
 export interface Message {
@@ -19,6 +46,8 @@ export interface Message {
   timestamp: Date;
   actions?: MessageAction[];
   feedbackEnabled?: boolean;
+  stepCompleted?: string; // Step title to show as completed status indicator
+  buildProgress?: BuildProgressItem[]; // Progress items with status indicators
 }
 
 export interface SupportPrompt {
@@ -65,7 +94,37 @@ interface WorkflowState {
   currentStepIndex: number;
   resource: ResourceInfo | null;
   inContext: boolean; // True when continuing from another workflow (e.g., import from database details)
+  path: WorkflowPath; // 'customize' or 'auto-setup' after user chooses
+  configSections: ConfigurationState;
 }
+
+// Default configuration state
+const DEFAULT_CONFIG_SECTIONS: ConfigurationState = {
+  cluster: {
+    id: 'cluster',
+    title: 'Cluster Configuration',
+    status: 'pending',
+    values: {},
+  },
+  instance: {
+    id: 'instance',
+    title: 'Instance',
+    status: 'pending',
+    values: {},
+  },
+  storage: {
+    id: 'storage',
+    title: 'Storage & Performance',
+    status: 'pending',
+    values: {},
+  },
+  security: {
+    id: 'security',
+    title: 'Security',
+    status: 'pending',
+    values: {},
+  },
+};
 
 interface ChatContextType {
   // Chat state
@@ -89,6 +148,8 @@ interface ChatContextType {
   startWorkflowInContext: (config: WorkflowConfig) => void; // Start workflow while preserving context
   selectWorkflowOption: (optionId: string) => void;
   transitionWorkflowView: (view: WorkflowView) => void;
+  setWorkflowPath: (path: WorkflowPath) => void;
+  updateConfigSection: (sectionId: ConfigSectionId, status: StepStatus, values?: ConfigSectionValues) => void;
   endWorkflow: () => void;
 
   // Demo script control
@@ -106,20 +167,698 @@ interface DemoStep {
   agentMessage: Omit<Message, 'id' | 'timestamp'>;
   prompts?: SupportPrompt[];
   updateStep?: { stepId: string; status: StepStatus };
+  updateConfigSection?: { sectionId: ConfigSectionId; status: StepStatus; values?: ConfigSectionValues };
+  updateConfigSections?: Array<{ sectionId: ConfigSectionId; status: StepStatus; values?: ConfigSectionValues }>;
   createResource?: ResourceInfo;
   transitionView?: WorkflowView;
+  setPath?: WorkflowPath;
   delay?: number;
 }
 
+// Prompt-aware response system for realistic demo variability
+interface PromptResponse {
+  message: string;
+  configUpdates?: Array<{ sectionId: ConfigSectionId; status: StepStatus; values?: ConfigSectionValues }>;
+  nextPrompts?: SupportPrompt[];
+  actions?: MessageAction[]; // Action buttons on the message
+  stepCompleted?: string; // Step title to show completion divider
+  updateStep?: { stepId: string; status: StepStatus }; // Update workflow step status
+  skipToStep?: number; // Skip to a specific step in the script
+  feedbackEnabled?: boolean;
+}
+
+// Mapping of prompt IDs to their specific responses
+const PROMPT_RESPONSES: Record<string, PromptResponse> = {
+  // === CREATE DATABASE SCRIPT - Scale Selection ===
+  'under-50': {
+    message: `Perfect! For under 50 restaurants, here's my recommended configuration:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLUSTER CONFIGURATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Cluster name: food-delivery-prod
+• Engine: Aurora DSQL (PostgreSQL 15.4)
+• Region: us-east-1 (N. Virginia)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Instance class: db.r6g.medium
+• vCPU: 1 core
+• Memory: 8 GB RAM
+• Estimated cost: ~$0.125/hour (~$90/month)
+• Multi-AZ: Enabled (automatic failover)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STORAGE & PERFORMANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Storage type: Aurora Auto-scaling
+• Initial storage: 10 GB
+• Max storage: 500 GB (scales automatically)
+• IOPS: 3,000 baseline
+• Connection pooling: Enabled (max 50 connections)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECURITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Encryption at rest: AES-256 (AWS managed key)
+• Encryption in transit: TLS 1.3
+• Authentication: IAM + password
+• Public access: Disabled
+• VPC: Default VPC with private subnets
+
+This smaller instance is cost-effective for your scale. Would you like to adjust the region?`,
+    configUpdates: [
+      { sectionId: 'instance', status: 'pending', values: { 'Instance class': 'db.r6g.medium', 'vCPU': '1', 'Memory': '8 GB', 'Multi-AZ': 'Enabled' } },
+      { sectionId: 'storage', status: 'pending', values: { 'Storage type': 'Auto-scaling', 'Min storage': '10 GB', 'Max storage': '500 GB', 'IOPS': '3,000', 'Connection pool': 'Enabled (max 50)' } },
+    ],
+    nextPrompts: [
+      { id: 'us-east-1', text: 'Keep US East (N. Virginia)' },
+      { id: 'us-west-2', text: 'Change to US West (Oregon)' },
+      { id: 'eu-west-1', text: 'Change to Europe (Ireland)' },
+    ],
+    feedbackEnabled: true,
+  },
+  '50-200': {
+    message: `Perfect! For 50-200 restaurants, here's my recommended configuration:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLUSTER CONFIGURATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Cluster name: food-delivery-prod
+• Engine: Aurora DSQL (PostgreSQL 15.4)
+• Region: us-east-1 (N. Virginia)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Instance class: db.r6g.large
+• vCPU: 2 cores
+• Memory: 16 GB RAM
+• Estimated cost: ~$0.250/hour (~$180/month)
+• Multi-AZ: Enabled (automatic failover)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STORAGE & PERFORMANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Storage type: Aurora Auto-scaling
+• Initial storage: 20 GB
+• Max storage: 1 TB (scales automatically)
+• IOPS: 3,000 baseline (bursts to 10,000)
+• Connection pooling: Enabled (max 100 connections)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECURITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Encryption at rest: AES-256 (AWS managed key)
+• Encryption in transit: TLS 1.3
+• Authentication: IAM + password
+• Public access: Disabled
+• VPC: Default VPC with private subnets
+
+This configuration can handle ~500 concurrent orders and supports your expected growth. Would you like to adjust the region?`,
+    nextPrompts: [
+      { id: 'us-east-1', text: 'Keep US East (N. Virginia)' },
+      { id: 'us-west-2', text: 'Change to US West (Oregon)' },
+      { id: 'eu-west-1', text: 'Change to Europe (Ireland)' },
+    ],
+    feedbackEnabled: true,
+  },
+  '200-plus': {
+    message: `Excellent! For 200+ restaurants, you'll need a robust configuration:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLUSTER CONFIGURATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Cluster name: food-delivery-prod
+• Engine: Aurora DSQL (PostgreSQL 15.4)
+• Region: us-east-1 (N. Virginia)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Instance class: db.r6g.xlarge
+• vCPU: 4 cores
+• Memory: 32 GB RAM
+• Estimated cost: ~$0.500/hour (~$360/month)
+• Multi-AZ: Enabled (automatic failover)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STORAGE & PERFORMANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Storage type: Aurora Auto-scaling
+• Initial storage: 50 GB
+• Max storage: 2 TB (scales automatically)
+• IOPS: 6,000 baseline (bursts to 20,000)
+• Connection pooling: Enabled (max 200 connections)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECURITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Encryption at rest: AES-256 (AWS managed key)
+• Encryption in transit: TLS 1.3
+• Authentication: IAM + password
+• Public access: Disabled
+• VPC: Default VPC with private subnets
+
+This high-capacity configuration handles 1000+ concurrent orders with room to grow. Would you like to adjust the region?`,
+    configUpdates: [
+      { sectionId: 'instance', status: 'pending', values: { 'Instance class': 'db.r6g.xlarge', 'vCPU': '4', 'Memory': '32 GB', 'Multi-AZ': 'Enabled' } },
+      { sectionId: 'storage', status: 'pending', values: { 'Storage type': 'Auto-scaling', 'Min storage': '50 GB', 'Max storage': '2 TB', 'IOPS': '6,000 (auto-scales)', 'Connection pool': 'Enabled (max 200)' } },
+    ],
+    nextPrompts: [
+      { id: 'us-east-1', text: 'Keep US East (N. Virginia)' },
+      { id: 'us-west-2', text: 'Change to US West (Oregon)' },
+      { id: 'eu-west-1', text: 'Change to Europe (Ireland)' },
+    ],
+    feedbackEnabled: true,
+  },
+
+  // === CREATE DATABASE SCRIPT - Region Selection (End of Step 1: Context and Requirements) ===
+  'us-east-1': {
+    message: `Great choice! US East (N. Virginia) offers the lowest latency for East Coast users and has the most AWS services available.
+
+Here's your final configuration summary:
+
+• Aurora DSQL cluster in US East (N. Virginia)
+• Instance sized for your scale with Multi-AZ
+• Auto-scaling storage
+• Full encryption and IAM authentication
+
+How would you like to proceed?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'success', values: { 'Cluster name': 'food-delivery-prod', 'Engine': 'Aurora DSQL (PostgreSQL)', 'Region': 'us-east-1' } },
+    ],
+    actions: [
+      { id: 'auto-setup', label: 'Auto DB setup', variant: 'primary' },
+      { id: 'configure-manual', label: 'Customize' },
+    ],
+    stepCompleted: 'Context and requirements',
+    updateStep: { stepId: 'context-requirements', status: 'success' },
+    feedbackEnabled: true,
+  },
+  'us-west-2': {
+    message: `Good choice! US West (Oregon) is excellent for West Coast users and offers competitive pricing.
+
+Here's your final configuration summary:
+
+• Aurora DSQL cluster in US West (Oregon)
+• Instance sized for your scale with Multi-AZ
+• Auto-scaling storage
+• Full encryption and IAM authentication
+
+How would you like to proceed?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'success', values: { 'Cluster name': 'food-delivery-prod', 'Engine': 'Aurora DSQL (PostgreSQL)', 'Region': 'us-west-2' } },
+    ],
+    actions: [
+      { id: 'auto-setup', label: 'Auto DB setup', variant: 'primary' },
+      { id: 'configure-manual', label: 'Customize' },
+    ],
+    stepCompleted: 'Context and requirements',
+    updateStep: { stepId: 'context-requirements', status: 'success' },
+    feedbackEnabled: true,
+  },
+  'eu-west-1': {
+    message: `Good choice! Europe (Ireland) is ideal for European users and ensures GDPR compliance.
+
+Here's your final configuration summary:
+
+• Aurora DSQL cluster in Europe (Ireland)
+• Instance sized for your scale with Multi-AZ
+• Auto-scaling storage
+• Full encryption and IAM authentication
+
+How would you like to proceed?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'success', values: { 'Cluster name': 'food-delivery-prod', 'Engine': 'Aurora DSQL (PostgreSQL)', 'Region': 'eu-west-1' } },
+    ],
+    actions: [
+      { id: 'auto-setup', label: 'Auto DB setup', variant: 'primary' },
+      { id: 'configure-manual', label: 'Customize' },
+    ],
+    stepCompleted: 'Context and requirements',
+    updateStep: { stepId: 'context-requirements', status: 'success' },
+    feedbackEnabled: true,
+  },
+
+  // === CUSTOMIZE FLOW - Cluster Review ===
+  'cluster-confirm': {
+    message: `✓ Cluster configuration confirmed.
+
+Now let's review the Instance settings:
+
+• Instance class: db.r6g.large
+• vCPU: 2 cores
+• Memory: 16 GB RAM
+• Multi-AZ: Enabled (automatic failover)
+• Estimated cost: ~$0.250/hour (~$180/month)
+
+This can handle ~500 concurrent orders. Would you like to adjust the instance size?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'success' },
+      { sectionId: 'instance', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'instance-confirm', text: 'Looks good, continue' },
+      { id: 'instance-smaller', text: 'Use smaller (save cost)' },
+      { id: 'instance-larger', text: 'Use larger (more capacity)' },
+    ],
+    feedbackEnabled: true,
+  },
+  'cluster-change-name': {
+    message: `I can update the cluster name. For a food delivery platform, I'd suggest something descriptive like:
+
+• food-delivery-prod (production)
+• food-delivery-staging (staging/test)
+• fd-orders-cluster (if order-focused)
+
+What name would you like to use?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'name-prod', text: 'Use food-delivery-prod' },
+      { id: 'name-staging', text: 'Use food-delivery-staging' },
+      { id: 'name-orders', text: 'Use fd-orders-cluster' },
+    ],
+    feedbackEnabled: true,
+  },
+  'cluster-change-region': {
+    message: `Here are the available regions for Aurora DSQL:
+
+• US East (N. Virginia) - us-east-1 ← Current
+  → Lowest latency for East Coast, most services available
+
+• US West (Oregon) - us-west-2
+  → Great for West Coast users, competitive pricing
+
+• Europe (Ireland) - eu-west-1
+  → Ideal for European users, GDPR compliant
+
+Which region would you prefer?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'region-us-east', text: 'Keep US East (N. Virginia)' },
+      { id: 'region-us-west', text: 'US West (Oregon)' },
+      { id: 'region-eu', text: 'Europe (Ireland)' },
+    ],
+    feedbackEnabled: true,
+  },
+  'name-prod': {
+    message: `✓ Cluster name set to "food-delivery-prod"
+
+Now let's review the Instance settings:
+
+• Instance class: db.r6g.large
+• vCPU: 2 cores
+• Memory: 16 GB RAM
+• Multi-AZ: Enabled (automatic failover)
+• Estimated cost: ~$0.250/hour (~$180/month)
+
+Would you like to adjust the instance size?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'success', values: { 'Cluster name': 'food-delivery-prod', 'Engine': 'Aurora DSQL (PostgreSQL)', 'Region': 'us-east-1' } },
+      { sectionId: 'instance', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'instance-confirm', text: 'Looks good, continue' },
+      { id: 'instance-smaller', text: 'Use smaller (save cost)' },
+      { id: 'instance-larger', text: 'Use larger (more capacity)' },
+    ],
+    feedbackEnabled: true,
+  },
+  'name-staging': {
+    message: `✓ Cluster name set to "food-delivery-staging"
+
+Now let's review the Instance settings:
+
+• Instance class: db.r6g.large
+• vCPU: 2 cores
+• Memory: 16 GB RAM
+• Multi-AZ: Enabled (automatic failover)
+• Estimated cost: ~$0.250/hour (~$180/month)
+
+Would you like to adjust the instance size?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'success', values: { 'Cluster name': 'food-delivery-staging', 'Engine': 'Aurora DSQL (PostgreSQL)', 'Region': 'us-east-1' } },
+      { sectionId: 'instance', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'instance-confirm', text: 'Looks good, continue' },
+      { id: 'instance-smaller', text: 'Use smaller (save cost)' },
+      { id: 'instance-larger', text: 'Use larger (more capacity)' },
+    ],
+    feedbackEnabled: true,
+  },
+  'name-orders': {
+    message: `✓ Cluster name set to "fd-orders-cluster"
+
+Now let's review the Instance settings:
+
+• Instance class: db.r6g.large
+• vCPU: 2 cores
+• Memory: 16 GB RAM
+• Multi-AZ: Enabled (automatic failover)
+• Estimated cost: ~$0.250/hour (~$180/month)
+
+Would you like to adjust the instance size?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'success', values: { 'Cluster name': 'fd-orders-cluster', 'Engine': 'Aurora DSQL (PostgreSQL)', 'Region': 'us-east-1' } },
+      { sectionId: 'instance', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'instance-confirm', text: 'Looks good, continue' },
+      { id: 'instance-smaller', text: 'Use smaller (save cost)' },
+      { id: 'instance-larger', text: 'Use larger (more capacity)' },
+    ],
+    feedbackEnabled: true,
+  },
+  'region-us-east': {
+    message: `✓ Region confirmed: US East (N. Virginia)
+
+Now let's review the Instance settings:
+
+• Instance class: db.r6g.large
+• vCPU: 2 cores
+• Memory: 16 GB RAM
+• Multi-AZ: Enabled (automatic failover)
+
+Would you like to adjust the instance size?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'success', values: { 'Cluster name': 'food-delivery-prod', 'Engine': 'Aurora DSQL (PostgreSQL)', 'Region': 'us-east-1' } },
+      { sectionId: 'instance', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'instance-confirm', text: 'Looks good, continue' },
+      { id: 'instance-smaller', text: 'Use smaller (save cost)' },
+      { id: 'instance-larger', text: 'Use larger (more capacity)' },
+    ],
+    feedbackEnabled: true,
+  },
+  'region-us-west': {
+    message: `✓ Region updated to: US West (Oregon)
+
+Now let's review the Instance settings:
+
+• Instance class: db.r6g.large
+• vCPU: 2 cores
+• Memory: 16 GB RAM
+• Multi-AZ: Enabled (automatic failover)
+
+Would you like to adjust the instance size?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'success', values: { 'Cluster name': 'food-delivery-prod', 'Engine': 'Aurora DSQL (PostgreSQL)', 'Region': 'us-west-2' } },
+      { sectionId: 'instance', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'instance-confirm', text: 'Looks good, continue' },
+      { id: 'instance-smaller', text: 'Use smaller (save cost)' },
+      { id: 'instance-larger', text: 'Use larger (more capacity)' },
+    ],
+    feedbackEnabled: true,
+  },
+  'region-eu': {
+    message: `✓ Region updated to: Europe (Ireland)
+
+Now let's review the Instance settings:
+
+• Instance class: db.r6g.large
+• vCPU: 2 cores
+• Memory: 16 GB RAM
+• Multi-AZ: Enabled (automatic failover)
+
+Would you like to adjust the instance size?`,
+    configUpdates: [
+      { sectionId: 'cluster', status: 'success', values: { 'Cluster name': 'food-delivery-prod', 'Engine': 'Aurora DSQL (PostgreSQL)', 'Region': 'eu-west-1' } },
+      { sectionId: 'instance', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'instance-confirm', text: 'Looks good, continue' },
+      { id: 'instance-smaller', text: 'Use smaller (save cost)' },
+      { id: 'instance-larger', text: 'Use larger (more capacity)' },
+    ],
+    feedbackEnabled: true,
+  },
+
+  // === CUSTOMIZE FLOW - Instance Review ===
+  'instance-confirm': {
+    message: `✓ Instance configuration confirmed: db.r6g.large
+
+Now let's review the Storage & Performance settings:
+
+• Storage type: Aurora Auto-scaling
+• Initial storage: 20 GB
+• Max storage: 1 TB (scales automatically)
+• IOPS: 3,000 baseline (bursts to 10,000)
+• Connection pooling: Enabled (max 100 connections)
+
+Auto-scaling means you only pay for what you use. Any changes needed?`,
+    configUpdates: [
+      { sectionId: 'instance', status: 'success' },
+      { sectionId: 'storage', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'storage-confirm', text: 'Looks good, continue' },
+      { id: 'storage-increase-max', text: 'Increase max storage' },
+      { id: 'storage-more-iops', text: 'Need more IOPS' },
+    ],
+    feedbackEnabled: true,
+  },
+  'instance-smaller': {
+    message: `✓ Instance updated to db.r6g.medium
+
+• Instance class: db.r6g.medium
+• vCPU: 1 core
+• Memory: 8 GB RAM
+• Multi-AZ: Enabled
+• Estimated cost: ~$0.125/hour (~$90/month) — 50% savings!
+
+Great for development or smaller workloads. Now let's review Storage:
+
+• Storage type: Aurora Auto-scaling
+• Initial storage: 20 GB
+• Max storage: 1 TB
+• IOPS: 3,000 baseline
+
+Any changes needed?`,
+    configUpdates: [
+      { sectionId: 'instance', status: 'success', values: { 'Instance class': 'db.r6g.medium', 'vCPU': '1', 'Memory': '8 GB', 'Multi-AZ': 'Enabled' } },
+      { sectionId: 'storage', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'storage-confirm', text: 'Looks good, continue' },
+      { id: 'storage-increase-max', text: 'Increase max storage' },
+      { id: 'storage-more-iops', text: 'Need more IOPS' },
+    ],
+    feedbackEnabled: true,
+  },
+  'instance-larger': {
+    message: `✓ Instance updated to db.r6g.xlarge
+
+• Instance class: db.r6g.xlarge
+• vCPU: 4 cores
+• Memory: 32 GB RAM
+• Multi-AZ: Enabled
+• Estimated cost: ~$0.500/hour (~$360/month)
+
+This handles 1000+ concurrent orders with headroom for growth. Now let's review Storage:
+
+• Storage type: Aurora Auto-scaling
+• Initial storage: 20 GB
+• Max storage: 1 TB
+• IOPS: 3,000 baseline (bursts to 10,000)
+
+Any changes needed?`,
+    configUpdates: [
+      { sectionId: 'instance', status: 'success', values: { 'Instance class': 'db.r6g.xlarge', 'vCPU': '4', 'Memory': '32 GB', 'Multi-AZ': 'Enabled' } },
+      { sectionId: 'storage', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'storage-confirm', text: 'Looks good, continue' },
+      { id: 'storage-increase-max', text: 'Increase max storage' },
+      { id: 'storage-more-iops', text: 'Need more IOPS' },
+    ],
+    feedbackEnabled: true,
+  },
+
+  // === CUSTOMIZE FLOW - Storage Review ===
+  'storage-confirm': {
+    message: `✓ Storage configuration confirmed.
+
+Finally, let's review the Security settings:
+
+• Encryption at rest: AES-256 (AWS managed key)
+• Encryption in transit: TLS 1.3
+• Authentication: IAM + password
+• Public access: Disabled
+• VPC: Default VPC with private subnets
+
+These are secure defaults for production. Any changes?`,
+    configUpdates: [
+      { sectionId: 'storage', status: 'success' },
+      { sectionId: 'security', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'security-confirm', text: 'Looks good, continue' },
+      { id: 'security-custom-key', text: 'Use custom encryption key' },
+      { id: 'security-change-vpc', text: 'Change VPC settings' },
+    ],
+    feedbackEnabled: true,
+  },
+  'storage-increase-max': {
+    message: `✓ Storage updated with higher capacity:
+
+• Storage type: Aurora Auto-scaling
+• Initial storage: 50 GB
+• Max storage: 4 TB (increased from 1 TB)
+• IOPS: 6,000 baseline (bursts to 20,000)
+• Connection pooling: Enabled (max 150 connections)
+
+This gives you 4x the storage headroom. Now let's review Security:
+
+• Encryption at rest: AES-256 (AWS managed key)
+• Encryption in transit: TLS 1.3
+• Public access: Disabled
+
+Any security changes needed?`,
+    configUpdates: [
+      { sectionId: 'storage', status: 'success', values: { 'Storage type': 'Auto-scaling', 'Min storage': '50 GB', 'Max storage': '4 TB', 'IOPS': '6,000 (auto-scales)', 'Connection pool': 'Enabled (max 150)' } },
+      { sectionId: 'security', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'security-confirm', text: 'Looks good, continue' },
+      { id: 'security-custom-key', text: 'Use custom encryption key' },
+      { id: 'security-change-vpc', text: 'Change VPC settings' },
+    ],
+    feedbackEnabled: true,
+  },
+  'storage-more-iops': {
+    message: `✓ Storage updated for high performance:
+
+• Storage type: Aurora Auto-scaling
+• Initial storage: 20 GB
+• Max storage: 1 TB
+• IOPS: 10,000 provisioned (consistent performance)
+• Connection pooling: Enabled (max 200 connections)
+
+Provisioned IOPS ensures consistent performance during peak times. Now let's review Security:
+
+• Encryption at rest: AES-256 (AWS managed key)
+• Encryption in transit: TLS 1.3
+• Public access: Disabled
+
+Any security changes needed?`,
+    configUpdates: [
+      { sectionId: 'storage', status: 'success', values: { 'Storage type': 'Provisioned IOPS', 'Min storage': '20 GB', 'Max storage': '1 TB', 'IOPS': '10,000 provisioned', 'Connection pool': 'Enabled (max 200)' } },
+      { sectionId: 'security', status: 'in-progress' },
+    ],
+    nextPrompts: [
+      { id: 'security-confirm', text: 'Looks good, continue' },
+      { id: 'security-custom-key', text: 'Use custom encryption key' },
+      { id: 'security-change-vpc', text: 'Change VPC settings' },
+    ],
+    feedbackEnabled: true,
+  },
+
+  // === CUSTOMIZE FLOW - Security Confirmation (triggers script Step 4 for final summary) ===
+  'security-confirm': {
+    message: `✓ Security configuration confirmed.
+
+All configuration sections have been reviewed.`,
+    configUpdates: [
+      { sectionId: 'security', status: 'success' },
+    ],
+    feedbackEnabled: true,
+    // Note: No actions here - script Step 4 will show the final summary with Create database button
+  },
+  'security-custom-key': {
+    message: `✓ Security updated with custom encryption:
+
+• Encryption at rest: AES-256 (Customer managed KMS key)
+• Encryption in transit: TLS 1.3
+• Authentication: IAM + password
+• Public access: Disabled
+• VPC: Default VPC with private subnets
+
+Using your own KMS key gives you full control over key rotation and access policies.`,
+    configUpdates: [
+      { sectionId: 'security', status: 'success', values: { 'Encryption': 'Enabled (Customer managed key)', 'Public access': 'Disabled', 'IAM auth': 'Enabled', 'VPC': 'Default VPC' } },
+    ],
+    feedbackEnabled: true,
+  },
+  'security-change-vpc': {
+    message: `✓ Security updated with custom VPC:
+
+• Encryption at rest: AES-256 (AWS managed key)
+• Encryption in transit: TLS 1.3
+• Authentication: IAM + password
+• Public access: Disabled
+• VPC: Custom VPC (vpc-food-delivery)
+• Subnets: Private subnets across 3 AZs
+
+Your database will be deployed in your custom VPC for network isolation.`,
+    configUpdates: [
+      { sectionId: 'security', status: 'success', values: { 'Encryption': 'Enabled (AWS managed key)', 'Public access': 'Disabled', 'IAM auth': 'Enabled', 'VPC': 'Custom VPC (vpc-food-delivery)' } },
+    ],
+    feedbackEnabled: true,
+  },
+
+  // === Review Configuration (from final summary) ===
+  'review-again': {
+    message: `Let's review your configuration. Here's what we have:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLUSTER
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Cluster name: food-delivery-prod
+• Engine: Aurora DSQL (PostgreSQL 15.4)
+• Region: us-east-1
+
+Which section would you like to modify?`,
+    nextPrompts: [
+      { id: 'cluster-change-name', text: 'Change cluster name' },
+      { id: 'cluster-change-region', text: 'Change region' },
+      { id: 'back-to-summary', text: 'Back to summary' },
+    ],
+    feedbackEnabled: true,
+  },
+
+  // === Back to Summary ===
+  'back-to-summary': {
+    message: `Here's your final configuration summary:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Cluster: food-delivery-prod (Aurora DSQL)
+• Instance: db.r6g.large (2 vCPU, 16 GB)
+• Storage: Auto-scaling up to 1 TB
+• Security: Encrypted, private access, IAM auth
+
+Ready to create your database?`,
+    actions: [
+      { id: 'start-build-configured', label: 'Create database', variant: 'primary' },
+      { id: 'review-again', label: 'Review settings' },
+    ],
+    stepCompleted: 'DB Design',
+    updateStep: { stepId: 'db-design', status: 'success' },
+    feedbackEnabled: true,
+  },
+};
+
 // Food delivery CREATE DATABASE demo script
+// Flow: All questions in Step 1 (chat) → Auto runs uninterrupted in Step 2 (design) → Review in Step 3
 const CREATE_DATABASE_SCRIPT: DemoStep[] = [
-  // Step 0: Initial response after user describes their app
+  // Step 0: Initial response - ask about scale
   {
     agentMessage: {
       type: 'agent',
-      content: `Great! A food delivery platform has some interesting data requirements. Based on your need for real-time order tracking, I'd recommend Aurora DSQL - it handles high write throughput for order updates while maintaining strong consistency for payments.
+      content: `Great choice! A food delivery platform has some interesting data requirements. Based on your need for real-time order tracking, I'd recommend Aurora DSQL - it handles high write throughput for order updates while maintaining strong consistency for payments.
 
-Quick question: How many restaurants are you planning to support initially?`,
+How many restaurants are you planning to support initially?`,
       feedbackEnabled: true,
     },
     prompts: [
@@ -129,60 +868,134 @@ Quick question: How many restaurants are you planning to support initially?`,
     ],
     delay: 1500,
   },
-  // Step 1: After scale selection
+  // Step 1: After scale - show full recommended configuration
   {
     agentMessage: {
       type: 'agent',
-      content: `Perfect! For your scale, I recommend starting with a single-region setup in us-east-1. You can easily expand to multi-region later as you grow.
+      content: `Perfect! For 50-200 restaurants, here's my recommended configuration:
 
-One more thing - do you need separate environments for development and testing?`,
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CLUSTER CONFIGURATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Cluster name: food-delivery-prod
+• Engine: Aurora DSQL (PostgreSQL 15.4)
+• Region: us-east-1 (N. Virginia)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+INSTANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Instance class: db.r6g.large
+• vCPU: 2 cores
+• Memory: 16 GB RAM
+• Estimated cost: ~$0.250/hour (~$180/month)
+• Multi-AZ: Enabled (automatic failover)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STORAGE & PERFORMANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Storage type: Aurora Auto-scaling
+• Initial storage: 20 GB
+• Max storage: 1 TB (scales automatically)
+• IOPS: 3,000 baseline (bursts to 10,000)
+• Connection pooling: Enabled (max 100 connections)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECURITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Encryption at rest: AES-256 (AWS managed key)
+• Encryption in transit: TLS 1.3
+• Authentication: IAM + password
+• Public access: Disabled
+• VPC: Default VPC with private subnets
+
+This configuration can handle ~500 concurrent orders and supports your expected growth. Would you like to adjust the region?`,
       feedbackEnabled: true,
     },
     prompts: [
-      { id: 'dev-prod', text: 'Yes, create dev + prod' },
-      { id: 'prod-only', text: 'Just production for now' },
+      { id: 'us-east-1', text: 'Keep US East (N. Virginia)' },
+      { id: 'us-west-2', text: 'Change to US West (Oregon)' },
+      { id: 'eu-west-1', text: 'Change to Europe (Ireland)' },
     ],
-    delay: 1200,
+    delay: 1500,
   },
-  // Step 2: Confirmation with action buttons
+  // Step 2: Summary and action buttons - completes Step 1
   {
     agentMessage: {
       type: 'agent',
-      content: `Here's what I'll set up for you:
+      content: `Here's what I'll set up for your food delivery platform:
 
-• Aurora DSQL cluster (us-east-1)
-• Production environment
-• Optimized for high-frequency order updates
-• Auto-scaling enabled
-• Connection pooling configured
+• Aurora DSQL cluster in US East (N. Virginia)
+• db.r6g.large instance (2 vCPU, 16 GB RAM)
+• Auto-scaling storage (20 GB - 1 TB)
+• Multi-AZ enabled for high availability
+• IAM authentication and encryption enabled
 
-Ready to build?`,
+How would you like to proceed?`,
       feedbackEnabled: true,
       actions: [
         { id: 'auto-setup', label: 'Auto DB setup', variant: 'primary' },
-        { id: 'configure-manual', label: 'Configure together' },
+        { id: 'configure-manual', label: 'Customize' },
       ],
+      stepCompleted: 'Context and requirements',
     },
+    updateStep: { stepId: 'context-requirements', status: 'success' },
     delay: 1500,
   },
-  // Step 3: Auto setup starts - stay in chat view
+  // Step 3: Auto setup starts - transition to design view, open drawer
   {
     agentMessage: {
       type: 'agent',
       content: `Starting automated setup. I'll configure everything and keep you updated on the progress.`,
     },
-    updateStep: { stepId: 'configure', status: 'in-progress' },
-    delay: 800,
+    transitionView: 'design',
+    setPath: 'auto-setup',
+    updateStep: { stepId: 'db-design', status: 'in-progress' },
+    updateConfigSection: {
+      sectionId: 'cluster',
+      status: 'in-progress',
+      values: {
+        'Cluster name': 'food-delivery-prod',
+        'Engine': 'Aurora DSQL (PostgreSQL)',
+        'Region': 'us-east-1',
+      },
+    },
+    delay: 1000,
   },
-  // Step 4: Configure progress
+  // Step 4: Cluster complete
   {
     agentMessage: {
       type: 'agent',
-      content: `Setting up your Aurora DSQL cluster...
-
-✓ Creating cluster configuration
-✓ Configuring security groups
-• Provisioning database instance...`,
+      content: `✓ Cluster configuration complete
+• Configuring instance...`,
+    },
+    updateConfigSection: {
+      sectionId: 'cluster',
+      status: 'success',
+      values: {
+        'Cluster name': 'food-delivery-prod',
+        'Engine': 'Aurora DSQL (PostgreSQL)',
+        'Region': 'us-east-1',
+      },
+    },
+    delay: 1500,
+  },
+  // Step 5: Instance complete
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Cluster configuration complete
+✓ Instance provisioned
+• Configuring storage...`,
+    },
+    updateConfigSection: {
+      sectionId: 'instance',
+      status: 'success',
+      values: {
+        'Instance class': 'db.r6g.large',
+        'vCPU': '2',
+        'Memory': '16 GB',
+        'Multi-AZ': 'Enabled',
+      },
     },
     createResource: {
       id: 'food-delivery-db-001',
@@ -191,65 +1004,81 @@ Ready to build?`,
       region: 'us-east-1',
       status: 'creating',
     },
-    delay: 2000,
+    delay: 1500,
   },
-  // Step 5: Configure complete, ask about multi-region
+  // Step 6: Storage complete
   {
     agentMessage: {
       type: 'agent',
-      content: `Configuration complete! Now starting the build process.
+      content: `✓ Cluster configuration complete
+✓ Instance provisioned
+✓ Storage configured
+• Applying security settings...`,
+    },
+    updateConfigSection: {
+      sectionId: 'storage',
+      status: 'success',
+      values: {
+        'Storage type': 'Auto-scaling',
+        'Min storage': '20 GB',
+        'Max storage': '1 TB',
+        'IOPS': '3,000 (auto-scales)',
+        'Connection pool': 'Enabled (max 100)',
+      },
+    },
+    delay: 1500,
+  },
+  // Step 7: Security complete - DB Design step complete
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Cluster configuration complete
+✓ Instance provisioned
+✓ Storage configured
+✓ Security settings applied
 
-Do you need the database to serve traffic across multiple regions? I can set up multi-region replication if you expect customers in different geographic areas.`,
-      feedbackEnabled: true,
+All configuration complete! Generating connection endpoints...`,
+      stepCompleted: 'DB Design',
     },
-    updateStep: { stepId: 'configure', status: 'success' },
-    prompts: [
-      { id: 'multi-region-yes', text: 'Yes, enable multi-region' },
-      { id: 'multi-region-no', text: 'No, single region is fine' },
-    ],
-    delay: 2000,
-  },
-  // Step 6: Build starts
-  {
-    agentMessage: {
-      type: 'agent',
-      content: `Got it! I'll finalize the single-region setup. Starting the build process now...`,
+    updateStep: { stepId: 'db-design', status: 'success' },
+    updateConfigSection: {
+      sectionId: 'security',
+      status: 'success',
+      values: {
+        'Encryption': 'Enabled (AWS managed key)',
+        'Public access': 'Disabled',
+        'IAM auth': 'Enabled',
+        'VPC': 'Default VPC',
+      },
     },
-    updateStep: { stepId: 'build', status: 'in-progress' },
-    delay: 1000,
+    delay: 1500,
   },
-  // Step 7: Build progress
-  {
-    agentMessage: {
-      type: 'agent',
-      content: `Build in progress...
-
-✓ Database instance provisioned
-✓ Network configuration applied
-✓ IAM roles created
-• Generating connection endpoints...`,
-    },
-    delay: 2000,
-  },
-  // Step 8: Build complete - status message with action
+  // Step 8: Transition to review - offer completion
   {
     agentMessage: {
       type: 'status',
-      content: `Everything is configured. Once you click complete, I'll finalize the remaining resources and generate your connection details.`,
+      content: `Your database is ready! Click Complete to finalize and view your connection details.`,
       actions: [
-        { id: 'complete-setup', label: 'Complete DB setup', variant: 'primary' },
+        { id: 'complete-setup', label: 'Complete', variant: 'primary' },
       ],
     },
-    delay: 1500,
+    transitionView: 'review',
+    updateStep: { stepId: 'review-finish', status: 'in-progress' },
+    delay: 1000,
   },
   // Step 9: Completion
   {
     agentMessage: {
       type: 'agent',
-      content: `Your food delivery database is ready!`,
+      content: `Your food delivery database is ready!
+
+Endpoint: food-delivery-xyz.dsql.us-east-1.on.aws
+
+What would you like to do next?`,
       feedbackEnabled: true,
+      stepCompleted: 'Review and finish',
     },
-    updateStep: { stepId: 'build', status: 'success' },
+    updateStep: { stepId: 'review-finish', status: 'success' },
     createResource: {
       id: 'food-delivery-db-001',
       name: 'food-delivery-prod - us-east-1',
@@ -263,184 +1092,213 @@ Do you need the database to serve traffic across multiple regions? I can set up 
         'Auto-scaling': 'Enabled',
       },
     },
-    transitionView: 'completion',
-    delay: 1500,
-  },
-  // Step 10: What's next
-  {
-    agentMessage: {
-      type: 'agent',
-      content: `What would you like to do next?`,
-    },
     prompts: [
-      { id: 'connect', text: 'Connect to my cluster' },
+      { id: 'view-database', text: 'View the database' },
       { id: 'import', text: 'Import sample data' },
-      { id: 'schema', text: 'View schema' },
+      { id: 'connect', text: 'Connect to my cluster' },
     ],
-    delay: 800,
+    delay: 1500,
   },
 ];
 
-// CONFIGURE TOGETHER demo script (Hybrid Guided Review)
+// CUSTOMIZE demo script - interactive configuration through conversation
+// Flow: All sections populated → Review each section step-by-step → Build
 const CONFIGURE_TOGETHER_SCRIPT: DemoStep[] = [
-  // Step 0: Show full configuration recommendation
+  // Step 0: Populate ALL sections, start reviewing Cluster
   {
     agentMessage: {
       type: 'agent',
-      content: `Here's my recommended configuration for your food delivery application:
+      content: `Let's review each configuration section together. I've loaded the recommended settings based on your requirements.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  CLUSTER CONFIGURATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Let's start with the Cluster Configuration:
 
-  Cluster name:     food-delivery-prod
-  Engine:           Aurora DSQL (PostgreSQL)
-  Region:           us-east-1
+• Cluster name: food-delivery-prod
+• Engine: Aurora DSQL (PostgreSQL 15.4)
+• Region: us-east-1 (N. Virginia)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  INSTANCE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Instance class:   db.r6g.large (2 vCPU, 16 GB RAM)
-  Multi-AZ:         Enabled (high availability)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  STORAGE & PERFORMANCE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Storage:          Auto-scaling (20 GB - 1 TB)
-  IOPS:             3,000 (auto-scales with storage)
-  Connection pool:  Enabled (max 100 connections)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  SECURITY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Encryption:       Enabled (AWS managed key)
-  Public access:    Disabled
-  IAM auth:         Enabled
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-What would you like to change? You can select an option below or describe what you'd like to modify.`,
+Does this look good, or would you like to make changes?`,
       feedbackEnabled: true,
     },
+    transitionView: 'design',
+    setPath: 'customize',
+    updateStep: { stepId: 'db-design', status: 'in-progress' },
+    updateConfigSections: [
+      {
+        sectionId: 'cluster',
+        status: 'in-progress',
+        values: {
+          'Cluster name': 'food-delivery-prod',
+          'Engine': 'Aurora DSQL (PostgreSQL)',
+          'Region': 'us-east-1',
+        },
+      },
+      {
+        sectionId: 'instance',
+        status: 'pending',
+        values: {
+          'Instance class': 'db.r6g.large',
+          'vCPU': '2',
+          'Memory': '16 GB',
+          'Multi-AZ': 'Enabled',
+        },
+      },
+      {
+        sectionId: 'storage',
+        status: 'pending',
+        values: {
+          'Storage type': 'Auto-scaling',
+          'Min storage': '20 GB',
+          'Max storage': '1 TB',
+          'IOPS': '3,000 (auto-scales)',
+          'Connection pool': 'Enabled (max 100)',
+        },
+      },
+      {
+        sectionId: 'security',
+        status: 'pending',
+        values: {
+          'Encryption': 'Enabled (AWS managed key)',
+          'Public access': 'Disabled',
+          'IAM auth': 'Enabled',
+          'VPC': 'Default VPC',
+        },
+      },
+    ],
     prompts: [
-      { id: 'change-instance', text: 'Change instance size' },
-      { id: 'change-region', text: 'Change region' },
-      { id: 'why-multi-az', text: 'Why Multi-AZ?' },
-      { id: 'looks-good', text: 'Looks good, proceed' },
+      { id: 'cluster-confirm', text: 'Looks good, continue' },
+      { id: 'cluster-change-name', text: 'Change cluster name' },
+      { id: 'cluster-change-region', text: 'Change region' },
     ],
     delay: 1500,
   },
-  // Step 1: Response to "Change instance size"
+  // Step 1: Cluster confirmed, review Instance
   {
     agentMessage: {
       type: 'agent',
-      content: `Good question! Here are the available instance options:
+      content: `✓ Cluster configuration confirmed.
 
-• db.r6g.medium (1 vCPU, 8 GB) - $0.125/hr
-  → Best for: Development, testing, low-traffic apps
+Now let's review the Instance settings:
 
-• db.r6g.large (2 vCPU, 16 GB) - $0.250/hr ← Current
-  → Best for: Small-medium production workloads
+• Instance class: db.r6g.large
+• vCPU: 2 cores
+• Memory: 16 GB RAM
+• Multi-AZ: Enabled (automatic failover)
+• Estimated cost: ~$0.250/hour (~$180/month)
 
-• db.r6g.xlarge (4 vCPU, 32 GB) - $0.500/hr
-  → Best for: High-traffic production apps
-
-• db.r6g.2xlarge (8 vCPU, 64 GB) - $1.00/hr
-  → Best for: Large-scale, high-concurrency workloads
-
-For a food delivery app expecting 50-200 restaurants, I'd recommend sticking with db.r6g.large. It can handle ~500 concurrent orders comfortably.
-
-Which size would you prefer?`,
+This can handle ~500 concurrent orders. Would you like to adjust the instance size?`,
       feedbackEnabled: true,
     },
+    updateConfigSections: [
+      { sectionId: 'cluster', status: 'success' },
+      { sectionId: 'instance', status: 'in-progress' },
+    ],
     prompts: [
-      { id: 'instance-medium', text: 'Use medium (save cost)' },
-      { id: 'instance-large', text: 'Keep large (recommended)' },
-      { id: 'instance-xlarge', text: 'Use xlarge (more headroom)' },
+      { id: 'instance-confirm', text: 'Looks good, continue' },
+      { id: 'instance-smaller', text: 'Use smaller (save cost)' },
+      { id: 'instance-larger', text: 'Use larger (more capacity)' },
     ],
     delay: 1200,
   },
-  // Step 2: After instance selection - update config
+  // Step 2: Instance confirmed, review Storage
   {
     agentMessage: {
       type: 'agent',
-      content: `Got it! I've updated the configuration:
+      content: `✓ Instance configuration confirmed.
 
-✓ Instance class: db.r6g.xlarge (4 vCPU, 32 GB)
+Now let's review the Storage & Performance settings:
 
-This gives you extra headroom for traffic spikes during peak meal times. Good choice for a growing platform!
+• Storage type: Aurora Auto-scaling
+• Initial storage: 20 GB
+• Max storage: 1 TB (scales automatically)
+• IOPS: 3,000 baseline (bursts to 10,000)
+• Connection pooling: Enabled (max 100 connections)
 
-Here's your updated configuration summary:
-
-  Cluster:    food-delivery-prod
-  Engine:     Aurora DSQL (PostgreSQL)
-  Region:     us-east-1
-  Instance:   db.r6g.xlarge (4 vCPU, 32 GB) ← Updated
-  Storage:    Auto-scaling (20 GB - 1 TB)
-  Multi-AZ:   Enabled
-  Encryption: Enabled
-
-Anything else you'd like to adjust?`,
+Auto-scaling means you only pay for what you use. Any changes needed?`,
       feedbackEnabled: true,
     },
-    prompts: [
-      { id: 'change-more', text: 'Change something else' },
-      { id: 'ready-build', text: 'Ready to build' },
+    updateConfigSections: [
+      { sectionId: 'instance', status: 'success' },
+      { sectionId: 'storage', status: 'in-progress' },
     ],
-    delay: 1500,
+    prompts: [
+      { id: 'storage-confirm', text: 'Looks good, continue' },
+      { id: 'storage-increase-max', text: 'Increase max storage' },
+      { id: 'storage-more-iops', text: 'Need more IOPS' },
+    ],
+    delay: 1200,
   },
-  // Step 3: Ready to build confirmation
+  // Step 3: Storage confirmed, review Security
   {
     agentMessage: {
       type: 'agent',
-      content: `Perfect! Here's the final configuration:
+      content: `✓ Storage configuration confirmed.
 
-┌─────────────────────────────────────────┐
-│  food-delivery-prod                     │
-│  Aurora DSQL (PostgreSQL)               │
-├─────────────────────────────────────────┤
-│  Region:       us-east-1                │
-│  Instance:     db.r6g.xlarge            │
-│  Storage:      Auto-scaling             │
-│  Multi-AZ:     Enabled                  │
-│  Encryption:   Enabled                  │
-│  IAM Auth:     Enabled                  │
-└─────────────────────────────────────────┘
+Finally, let's review the Security settings:
+
+• Encryption at rest: AES-256 (AWS managed key)
+• Encryption in transit: TLS 1.3
+• Authentication: IAM + password
+• Public access: Disabled
+• VPC: Default VPC with private subnets
+
+These are secure defaults for production. Any changes?`,
+      feedbackEnabled: true,
+    },
+    updateConfigSections: [
+      { sectionId: 'storage', status: 'success' },
+      { sectionId: 'security', status: 'in-progress' },
+    ],
+    prompts: [
+      { id: 'security-confirm', text: 'Confirm and continue' },
+      { id: 'security-custom-key', text: 'Use custom encryption key' },
+      { id: 'security-change-vpc', text: 'Change VPC settings' },
+    ],
+    delay: 1200,
+  },
+  // Step 4: All sections confirmed, ready to build
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Security configuration confirmed.
+
+All configuration sections are complete! Here's your final configuration:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• Cluster: food-delivery-prod (Aurora DSQL)
+• Instance: db.r6g.large (2 vCPU, 16 GB)
+• Storage: Auto-scaling up to 1 TB
+• Security: Encrypted, private access, IAM auth
 
 Ready to create your database?`,
       feedbackEnabled: true,
+      stepCompleted: 'DB Design',
       actions: [
         { id: 'start-build-configured', label: 'Create database', variant: 'primary' },
-        { id: 'change-more', label: 'Make more changes' },
+        { id: 'review-again', label: 'Review settings' },
       ],
     },
-    delay: 1200,
+    updateConfigSections: [
+      { sectionId: 'security', status: 'success' },
+    ],
+    updateStep: { stepId: 'db-design', status: 'success' },
+    delay: 1500,
   },
-  // Step 4: Build starts
+  // Step 5: Build starts - transition to review
   {
     agentMessage: {
       type: 'agent',
-      content: `Creating your database with the configured settings...`,
-    },
-    updateStep: { stepId: 'configure', status: 'success' },
-    delay: 800,
-  },
-  // Step 5: Build progress
-  {
-    agentMessage: {
-      type: 'agent',
-      content: `Build in progress...
+      content: `Creating your database with the configured settings...
 
 ✓ Cluster configuration applied
-✓ db.r6g.xlarge instance provisioning
+✓ db.r6g.large instance provisioning
 ✓ Multi-AZ standby launching
 ✓ Security groups configured
 • Generating connection endpoints...`,
     },
-    updateStep: { stepId: 'build', status: 'in-progress' },
+    updateStep: { stepId: 'review-finish', status: 'in-progress' },
+    transitionView: 'review',
     createResource: {
       id: 'food-delivery-db-001',
       name: 'food-delivery-prod - us-east-1',
@@ -448,7 +1306,7 @@ Ready to create your database?`,
       region: 'us-east-1',
       status: 'creating',
       details: {
-        'Instance': 'db.r6g.xlarge',
+        'Instance': 'db.r6g.large',
         'Multi-AZ': 'Enabled',
       },
     },
@@ -471,10 +1329,13 @@ Ready to create your database?`,
       type: 'agent',
       content: `Your food delivery database is ready!
 
-The db.r6g.xlarge instance gives you plenty of headroom for growth.`,
+Endpoint: food-delivery-xyz.dsql.us-east-1.on.aws
+
+What would you like to do next?`,
       feedbackEnabled: true,
+      stepCompleted: 'Review and finish',
     },
-    updateStep: { stepId: 'build', status: 'success' },
+    updateStep: { stepId: 'review-finish', status: 'success' },
     createResource: {
       id: 'food-delivery-db-001',
       name: 'food-delivery-prod - us-east-1',
@@ -485,25 +1346,16 @@ The db.r6g.xlarge instance gives you plenty of headroom for growth.`,
       details: {
         'Cluster ID': 'food-delivery-prod-xyz',
         'Engine': 'Aurora DSQL',
-        'Instance': 'db.r6g.xlarge',
+        'Instance': 'db.r6g.large',
         'Multi-AZ': 'Enabled',
       },
     },
-    transitionView: 'completion',
-    delay: 1500,
-  },
-  // Step 8: What's next
-  {
-    agentMessage: {
-      type: 'agent',
-      content: `What would you like to do next?`,
-    },
     prompts: [
-      { id: 'connect', text: 'Connect to my cluster' },
+      { id: 'view-database', text: 'View the database' },
       { id: 'import', text: 'Import sample data' },
-      { id: 'schema', text: 'View schema' },
+      { id: 'connect', text: 'Connect to my cluster' },
     ],
-    delay: 800,
+    delay: 1500,
   },
 ];
 
@@ -650,7 +1502,6 @@ Summary:
         'Duration': '12 seconds',
       },
     },
-    transitionView: 'completion',
     delay: 1500,
   },
   // Step 8: What's next
@@ -831,7 +1682,6 @@ food-delivery-staging has been created with all settings from food-delivery-prod
         'Engine': 'Aurora DSQL',
       },
     },
-    transitionView: 'completion',
     delay: 1500,
   },
   // Step 10: What's next
@@ -1045,7 +1895,6 @@ Your ecommerce database is now running on Aurora DSQL!`,
         'CDC Status': 'Active',
       },
     },
-    transitionView: 'completion',
     delay: 2000,
   },
   // Step 10: What's next
@@ -1112,6 +1961,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     currentStepIndex: 0,
     resource: null,
     inContext: false,
+    path: null,
+    configSections: DEFAULT_CONFIG_SECTIONS,
   });
 
   // Demo script tracking
@@ -1160,10 +2011,45 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     // Update workflow view if needed
     if (step.transitionView) {
       setWorkflow(prev => ({ ...prev, view: step.transitionView! }));
-      // Open drawer when transitioning to wizard view
-      if (step.transitionView === 'wizard') {
+      // Open drawer when transitioning to design or review view
+      if (step.transitionView === 'design' || step.transitionView === 'review') {
         setIsDrawerOpen(true);
       }
+    }
+
+    // Set workflow path if specified
+    if (step.setPath) {
+      setWorkflow(prev => ({ ...prev, path: step.setPath! }));
+    }
+
+    // Update config section if needed
+    if (step.updateConfigSection) {
+      setWorkflow(prev => ({
+        ...prev,
+        configSections: {
+          ...prev.configSections,
+          [step.updateConfigSection!.sectionId]: {
+            ...prev.configSections[step.updateConfigSection!.sectionId],
+            status: step.updateConfigSection!.status,
+            values: step.updateConfigSection!.values || prev.configSections[step.updateConfigSection!.sectionId].values,
+          },
+        },
+      }));
+    }
+
+    // Update multiple config sections if needed
+    if (step.updateConfigSections) {
+      setWorkflow(prev => {
+        const newConfigSections = { ...prev.configSections };
+        for (const update of step.updateConfigSections!) {
+          newConfigSections[update.sectionId] = {
+            ...newConfigSections[update.sectionId],
+            status: update.status,
+            values: update.values || newConfigSections[update.sectionId].values,
+          };
+        }
+        return { ...prev, configSections: newConfigSections };
+      });
     }
 
     // Update step status if needed
@@ -1230,6 +2116,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       currentStepIndex: 0,
       resource: prev.resource, // Keep the resource from previous workflow
       inContext: true,
+      path: prev.path, // Keep the path from previous workflow
+      configSections: prev.configSections, // Keep config sections from previous workflow
     }));
 
     // Start the agent response
@@ -1273,6 +2161,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
       setShowPrompts(false);
 
+      // Check if this is "View the database" prompt - navigate to database details
+      if (promptId === 'view-database' && navigateRef.current) {
+        setTimeout(() => {
+          navigateRef.current?.('/database-details');
+        }, 500);
+        return;
+      }
+
       // Check if this is a navigation prompt (at end of create database workflow)
       if (promptId === 'import' && navigateRef.current) {
         // Navigate to database details and start import workflow in context
@@ -1306,6 +2202,74 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (promptId === 'connect' || promptId === 'schema') {
         // These could navigate to other pages in the future
         runNextStep();
+        return;
+      }
+
+      // Check if there's a prompt-specific response
+      const promptResponse = PROMPT_RESPONSES[promptId];
+      if (promptResponse) {
+        setIsAgentTyping(true);
+
+        setTimeout(() => {
+          // Apply config updates and step updates
+          setWorkflow(prev => {
+            let newState = { ...prev };
+
+            // Apply config section updates if any
+            if (promptResponse.configUpdates) {
+              const newConfigSections = { ...prev.configSections };
+              for (const update of promptResponse.configUpdates) {
+                newConfigSections[update.sectionId] = {
+                  ...newConfigSections[update.sectionId],
+                  status: update.status,
+                  values: update.values || newConfigSections[update.sectionId].values,
+                };
+              }
+              newState = { ...newState, configSections: newConfigSections };
+            }
+
+            // Apply step status update if any
+            if (promptResponse.updateStep) {
+              const newSteps = prev.steps.map(step =>
+                step.id === promptResponse.updateStep!.stepId
+                  ? { ...step, status: promptResponse.updateStep!.status }
+                  : step
+              );
+              newState = { ...newState, steps: newSteps };
+            }
+
+            return newState;
+          });
+
+          // Add the response message with actions and stepCompleted if present
+          addMessage({
+            type: 'agent',
+            content: promptResponse.message,
+            feedbackEnabled: promptResponse.feedbackEnabled,
+            actions: promptResponse.actions,
+            stepCompleted: promptResponse.stepCompleted,
+          });
+
+          // Set next prompts if any
+          if (promptResponse.nextPrompts) {
+            setCurrentPrompts(promptResponse.nextPrompts);
+            setShowPrompts(true);
+          } else {
+            setShowPrompts(false);
+          }
+
+          setIsAgentTyping(false);
+
+          // If this is a security confirmation, trigger Step 4 of CONFIGURE_TOGETHER_SCRIPT to show final summary
+          if (promptId === 'security-confirm' || promptId === 'security-custom-key' || promptId === 'security-change-vpc') {
+            // Skip to Step 4 (final summary) - steps 0-3 are handled by PROMPT_RESPONSES
+            scriptStepRef.current = 4;
+            // Short delay then run Step 4 to show the summary with Create database button
+            setTimeout(() => {
+              runNextStep();
+            }, 800);
+          }
+        }, 1200);
         return;
       }
 
@@ -1344,31 +2308,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Trigger an action from a message
   const triggerAction = useCallback((actionId: string) => {
     if (actionId === 'auto-setup') {
-      // Move chat to drawer when action is triggered
-      setWorkflow(prev => ({ ...prev, view: 'wizard' }));
+      // Transition to design view with auto-setup path
+      setWorkflow(prev => ({ ...prev, view: 'design', path: 'auto-setup' }));
       setIsDrawerOpen(true);
 
-      // Run auto-setup sequence
+      // Run auto-setup sequence - runs steps 3-8 automatically
       runNextStep();
 
-      // Chain subsequent steps
       const runAutoSetupSequence = async () => {
-        // Wait for step 3 to complete
-        await new Promise(r => setTimeout(r, 2000));
-
-        // Step 4: Configure progress
-        if (!isProcessingRef.current) {
-          isProcessingRef.current = true;
-          setIsAgentTyping(true);
-          await executeDemoStep(scriptStepRef.current);
-        }
-
-        // Wait then step 5: Configure complete
-        await new Promise(r => setTimeout(r, 2500));
-        if (!isProcessingRef.current) {
-          isProcessingRef.current = true;
-          setIsAgentTyping(true);
-          await executeDemoStep(scriptStepRef.current);
+        // Run through all auto-setup steps (4, 5, 6, 7, 8)
+        for (let i = 0; i < 5; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          if (!isProcessingRef.current) {
+            isProcessingRef.current = true;
+            setIsAgentTyping(true);
+            await executeDemoStep(scriptStepRef.current);
+          }
         }
       };
 
@@ -1417,8 +2372,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       runCompletionSequence();
     } else if (actionId === 'start-import') {
-      // Move chat to drawer when import action is triggered
-      setWorkflow(prev => ({ ...prev, view: 'wizard' }));
+      // Transition to design view for import
+      setWorkflow(prev => ({ ...prev, view: 'design' }));
       setIsDrawerOpen(true);
 
       // Run import sequence
@@ -1521,8 +2476,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       runCloneCompletionSequence();
     } else if (actionId === 'start-migration') {
-      // Move chat to drawer when migration starts
-      setWorkflow(prev => ({ ...prev, view: 'wizard' }));
+      // Transition to design view for migration
+      setWorkflow(prev => ({ ...prev, view: 'design' }));
       setIsDrawerOpen(true);
 
       // Run migration sequence
@@ -1609,92 +2564,194 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       runMigrationCompletionSequence();
     } else if (actionId === 'configure-manual') {
-      // Switch to "Configure together" flow
+      // Switch to "Customize" flow
       setDemoPath('configure');
+      setWorkflow(prev => ({ ...prev, path: 'customize' }));
       scriptStepRef.current = 0;
 
-      // Run the configure together flow
+      // Run the customize flow
       setIsAgentTyping(true);
       setShowPrompts(false);
       setTimeout(() => {
         executeDemoStep(0);
       }, 1000);
     } else if (actionId === 'start-build-configured') {
-      // Move chat to drawer and start build from configure together flow
-      setWorkflow(prev => ({ ...prev, view: 'wizard' }));
+      // Transition to review view for final build from customize flow
+      setWorkflow(prev => ({ ...prev, view: 'review' }));
       setIsDrawerOpen(true);
 
-      // Run build sequence (steps 4-6 in CONFIGURE_TOGETHER_SCRIPT)
-      runNextStep();
+      // Update step to in-progress
+      setWorkflow(prev => ({
+        ...prev,
+        steps: prev.steps.map(s =>
+          s.id === 'review-finish' ? { ...s, status: 'in-progress' } : s
+        ),
+      }));
 
+      // Sequential build progress with individual status indicators
       const runConfiguredBuildSequence = async () => {
-        // Wait for step 4 to complete
-        await new Promise(r => setTimeout(r, 1500));
+        const buildSteps = [
+          { label: 'Applying cluster configuration...', successLabel: 'Cluster configuration applied' },
+          { label: 'Provisioning db.r6g.large instance...', successLabel: 'Instance provisioned' },
+          { label: 'Launching Multi-AZ standby...', successLabel: 'Multi-AZ standby launched' },
+          { label: 'Configuring security groups...', successLabel: 'Security groups configured' },
+          { label: 'Generating connection endpoints...', successLabel: 'Connection endpoints generated' },
+        ];
 
-        // Step 5: Build progress
-        if (!isProcessingRef.current) {
-          isProcessingRef.current = true;
+        // Add initial message
+        setIsAgentTyping(true);
+        await new Promise(r => setTimeout(r, 800));
+        setIsAgentTyping(false);
+
+        const initialMessageId = `msg-build-start-${Date.now()}`;
+        setMessages(prev => [...prev, {
+          id: initialMessageId,
+          type: 'agent' as MessageType,
+          content: 'Creating your database with the configured settings...',
+          timestamp: new Date(),
+          feedbackEnabled: false,
+        }]);
+
+        // Show each build step sequentially
+        for (let i = 0; i < buildSteps.length; i++) {
+          await new Promise(r => setTimeout(r, 600));
           setIsAgentTyping(true);
-          await executeDemoStep(scriptStepRef.current);
+          await new Promise(r => setTimeout(r, 400));
+          setIsAgentTyping(false);
+
+          const stepMessageId = `msg-build-step-${i}-${Date.now()}`;
+
+          // First show pending status
+          setMessages(prev => [...prev, {
+            id: stepMessageId,
+            type: 'agent' as MessageType,
+            content: '',
+            timestamp: new Date(),
+            buildProgress: [{ label: buildSteps[i].label, status: 'pending' as const }],
+          }]);
+
+          // After a delay, update to success
+          await new Promise(r => setTimeout(r, 800));
+          setMessages(prev => prev.map(msg =>
+            msg.id === stepMessageId
+              ? {
+                  ...msg,
+                  buildProgress: [{ label: buildSteps[i].successLabel, status: 'success' as const }],
+                }
+              : msg
+          ));
         }
 
-        // Wait then step 6: Build complete status
-        await new Promise(r => setTimeout(r, 3000));
-        if (!isProcessingRef.current) {
-          isProcessingRef.current = true;
-          setIsAgentTyping(true);
-          await executeDemoStep(scriptStepRef.current);
-        }
+        // Final completion message
+        await new Promise(r => setTimeout(r, 500));
+        setIsAgentTyping(true);
+        await new Promise(r => setTimeout(r, 600));
+        setIsAgentTyping(false);
+
+        // Create the resource
+        const resourceData = {
+          id: 'food-delivery-db-001',
+          name: 'food-delivery-prod - us-east-1',
+          type: 'Aurora DSQL - PostgreSQL',
+          region: 'us-east-1',
+          status: 'active' as const,
+          endpoint: 'food-delivery-prod.dsql.us-east-1.on.aws',
+        };
+
+        setWorkflow(prev => ({
+          ...prev,
+          resource: resourceData,
+        }));
+
+        setMessages(prev => [...prev, {
+          id: `msg-build-complete-${Date.now()}`,
+          type: 'status' as MessageType,
+          content: 'Database cluster created successfully!',
+          timestamp: new Date(),
+          actions: [
+            { id: 'complete-configured', label: 'View database', variant: 'primary' },
+          ],
+        }]);
+
+        // Update step to success
+        setWorkflow(prev => ({
+          ...prev,
+          steps: prev.steps.map(s =>
+            s.id === 'review-finish' ? { ...s, status: 'success' } : s
+          ),
+        }));
       };
 
       runConfiguredBuildSequence();
     } else if (actionId === 'complete-configured') {
       // Complete the configure together flow
-      runNextStep();
+      // Save database to store
+      addDatabaseRef.current({
+        id: `db-${Date.now()}`,
+        name: 'food-delivery-prod',
+        engine: 'Aurora DSQL - PostgreSQL',
+        region: 'us-east-1',
+        status: 'active',
+        endpoint: 'food-delivery-xyz.dsql.us-east-1.on.aws',
+        createdAt: new Date(),
+        connections: 0,
+        tags: { Environment: 'Production', Application: 'Food Delivery', Instance: 'db.r6g.xlarge' },
+      });
 
-      const runConfiguredCompletionSequence = async () => {
-        await new Promise(r => setTimeout(r, 2000));
-        if (!isProcessingRef.current) {
-          isProcessingRef.current = true;
-          setIsAgentTyping(true);
-          await executeDemoStep(scriptStepRef.current);
-        }
+      // Add activity
+      addActivityRef.current({
+        type: 'database_created',
+        title: 'Database cluster created',
+        description: 'food-delivery-prod cluster created with custom configuration',
+        resourceId: 'food-delivery-prod',
+        resourceName: 'food-delivery-prod',
+      });
 
-        // Save database to store
-        await new Promise(r => setTimeout(r, 500));
-        addDatabaseRef.current({
-          id: `db-${Date.now()}`,
-          name: 'food-delivery-prod',
-          engine: 'Aurora DSQL - PostgreSQL',
-          region: 'us-east-1',
-          status: 'active',
-          endpoint: 'food-delivery-xyz.dsql.us-east-1.on.aws',
-          createdAt: new Date(),
-          connections: 0,
-          tags: { Environment: 'Production', Application: 'Food Delivery', Instance: 'db.r6g.xlarge' },
+      // Navigate to database details page
+      if (navigateRef.current) {
+        navigateRef.current('/database-details');
+      }
+
+      // Add agent message asking what to do next with contextual prompts
+      setIsAgentTyping(true);
+      setTimeout(() => {
+        setIsAgentTyping(false);
+        addMessage({
+          type: 'agent',
+          content: 'What would you like to do next?',
+          feedbackEnabled: true,
         });
-
-        // Add activity
-        addActivityRef.current({
-          type: 'database_created',
-          title: 'Database cluster created',
-          description: 'food-delivery-prod cluster created with custom configuration',
-          resourceId: 'food-delivery-prod',
-          resourceName: 'food-delivery-prod',
-        });
-
-        // Navigate to database details page after completion
-        await new Promise(r => setTimeout(r, 1000));
-        if (navigateRef.current) {
-          navigateRef.current('/database-details');
-        }
-      };
-
-      runConfiguredCompletionSequence();
+        setCurrentPrompts([
+          { id: 'import', text: 'Import data' },
+          { id: 'connect', text: 'Connect to database' },
+          { id: 'schema', text: 'Design schema' },
+          { id: 'view-database', text: 'View database details' },
+        ]);
+        setShowPrompts(true);
+      }, 800);
+    } else if (actionId === 'review-again') {
+      // User wants to review configuration again
+      // Show the review-again response from PROMPT_RESPONSES
+      const reviewResponse = PROMPT_RESPONSES['review-again'];
+      if (reviewResponse) {
+        setIsAgentTyping(true);
+        setTimeout(() => {
+          addMessage({
+            type: 'agent',
+            content: reviewResponse.message,
+            feedbackEnabled: reviewResponse.feedbackEnabled,
+          });
+          if (reviewResponse.nextPrompts) {
+            setCurrentPrompts(reviewResponse.nextPrompts);
+            setShowPrompts(true);
+          }
+          setIsAgentTyping(false);
+        }, 800);
+      }
     } else {
       runNextStep();
     }
-  }, [runNextStep, executeDemoStep]);
+  }, [runNextStep, executeDemoStep, addMessage]);
 
   // Set drawer open state
   const setDrawerOpen = useCallback((open: boolean) => {
@@ -1719,6 +2776,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       currentStepIndex: 0,
       resource: null,
       inContext: false,
+      path: null,
+      configSections: DEFAULT_CONFIG_SECTIONS,
     });
   }, []);
 
@@ -1732,6 +2791,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setWorkflow(prev => ({ ...prev, view }));
   }, []);
 
+  // Set workflow path (customize or auto-setup)
+  const setWorkflowPath = useCallback((path: WorkflowPath) => {
+    setWorkflow(prev => ({ ...prev, path }));
+  }, []);
+
+  // Update a configuration section
+  const updateConfigSection = useCallback((sectionId: ConfigSectionId, status: StepStatus, values?: ConfigSectionValues) => {
+    setWorkflow(prev => ({
+      ...prev,
+      configSections: {
+        ...prev.configSections,
+        [sectionId]: {
+          ...prev.configSections[sectionId],
+          status,
+          values: values || prev.configSections[sectionId].values,
+        },
+      },
+    }));
+  }, []);
+
   // End workflow
   const endWorkflow = useCallback(() => {
     setWorkflow({
@@ -1743,6 +2822,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       currentStepIndex: 0,
       resource: null,
       inContext: false,
+      path: null,
+      configSections: DEFAULT_CONFIG_SECTIONS,
     });
     setMessages([]);
     setCurrentPrompts([]);
@@ -1764,6 +2845,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     startWorkflowInContext,
     selectWorkflowOption,
     transitionWorkflowView,
+    setWorkflowPath,
+    updateConfigSection,
     endWorkflow,
     runNextStep,
     setDemoPath,
