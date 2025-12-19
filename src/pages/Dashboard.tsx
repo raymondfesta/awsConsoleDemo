@@ -107,6 +107,7 @@ export default function Dashboard() {
   // Handle continue based on selection
   const handleContinue = () => {
     if (selectedAction === 'create') {
+      setDrawerOpen(false);
       navigate('/create-database');
     } else {
       navigate('/databases');
@@ -237,7 +238,10 @@ export default function Dashboard() {
         <Header
           variant="h1"
           actions={
-            <Button variant="primary" onClick={() => navigate('/create-database')}>
+            <Button variant="primary" onClick={() => {
+              setDrawerOpen(false);
+              navigate('/create-database');
+            }}>
               Create database
             </Button>
           }
@@ -360,13 +364,19 @@ export default function Dashboard() {
         {/* Quick actions */}
         <Container header={<Header variant="h2">Quick actions</Header>}>
           <ColumnLayout columns={4} variant="text-grid">
-            <div style={{ cursor: 'pointer' }} onClick={() => navigate('/create-database')}>
+            <div style={{ cursor: 'pointer' }} onClick={() => {
+              setDrawerOpen(false);
+              navigate('/create-database');
+            }}>
               <SpaceBetween size="xxs">
                 <Icon name="add-plus" />
                 <Link>Create database</Link>
               </SpaceBetween>
             </div>
-            <div style={{ cursor: 'pointer' }} onClick={() => navigate('/import-data')}>
+            <div style={{ cursor: 'pointer' }} onClick={() => {
+              setDrawerOpen(false);
+              navigate('/import-data');
+            }}>
               <SpaceBetween size="xxs">
                 <Icon name="upload" />
                 <Link>Import data</Link>

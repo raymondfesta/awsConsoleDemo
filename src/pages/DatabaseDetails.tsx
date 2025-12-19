@@ -57,7 +57,10 @@ export default function DatabaseDetails() {
           type="info"
           header="Continue setting up your database"
           action={
-            <Button onClick={() => navigate('/import-data')}>
+            <Button onClick={() => {
+              setDrawerOpen(false);
+              navigate('/import-data');
+            }}>
               Import data
             </Button>
           }

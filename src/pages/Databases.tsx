@@ -12,6 +12,7 @@ import TextFilter from '@cloudscape-design/components/text-filter';
 import Pagination from '@cloudscape-design/components/pagination';
 import CollectionPreferences from '@cloudscape-design/components/collection-preferences';
 import { useAppStore, type DatabaseCluster } from '../context/AppContext';
+import { useChatContext } from '../context/ChatContext';
 
 // Format date
 function formatDate(date: Date): string {
@@ -87,6 +88,7 @@ const columnDefinitions = [
 export default function Databases() {
   const navigate = useNavigate();
   const { databases } = useAppStore();
+  const { setDrawerOpen } = useChatContext();
 
   const [filteringText, setFilteringText] = useState('');
   const [selectedItems, setSelectedItems] = useState<DatabaseCluster[]>([]);
@@ -109,6 +111,7 @@ export default function Databases() {
 
   // Handle create database
   const handleCreateDatabase = () => {
+    setDrawerOpen(false);
     navigate('/create-database');
   };
 
