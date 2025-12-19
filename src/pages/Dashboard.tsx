@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ContentLayout from '@cloudscape-design/components/content-layout';
 import Container from '@cloudscape-design/components/container';
@@ -50,121 +51,54 @@ function getActivityIcon(type: ActivityEvent['type']): 'status-positive' | 'uplo
   }
 }
 
+// Tile-style selectable card wrapper matching Cloudscape Tiles styling
+const SelectableCard = ({
+  selected,
+  onClick,
+  children
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) => (
+  <div
+    onClick={onClick}
+    role="button"
+    tabIndex={0}
+    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
+    style={{
+      flex: 1,
+      cursor: 'pointer',
+      borderRadius: '16px',
+      boxShadow: selected
+        ? '0 0 0 2px #0972d3'
+        : 'none',
+      transition: 'box-shadow 90ms linear',
+    }}
+  >
+    <div style={{ pointerEvents: 'none' }}>
+      {children}
+    </div>
+  </div>
+);
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { databases, activities } = useAppStore();
+  const [selectedAction, setSelectedAction] = useState<'create' | 'explore'>('create');
 
   // Calculate stats
   const activeDatabases = databases.filter(db => db.status === 'active').length;
   const totalConnections = databases.reduce((sum, db) => sum + (db.connections || 0), 0);
 
-  // Handle getting started - navigate to create database page
-  // Drawer opens automatically when user triggers an action (Auto DB setup)
-  const handleGetStarted = () => {
-    navigate('/create-database');
+  // Handle continue based on selection
+  const handleContinue = () => {
+    if (selectedAction === 'create') {
+      navigate('/create-database');
+    } else {
+      navigate('/databases');
+    }
   };
-
-  // Empty state component
-  const EmptyState = () => (
-    <Box textAlign="center" padding={{ vertical: 'xxxl' }}>
-      <SpaceBetween size="m" alignItems="center">
-        <div style={{
-          width: '80px',
-          height: '80px',
-          borderRadius: '50%',
-          backgroundColor: 'var(--color-background-status-info)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <Icon name="add-plus" size="big" variant="link" />
-        </div>
-        <Box variant="h3" fontWeight="normal">
-          No databases yet
-        </Box>
-        <Box variant="p" color="text-body-secondary">
-          Create your first database cluster to get started with Aurora DSQL.
-        </Box>
-        <Button variant="primary" onClick={handleGetStarted}>
-          Create database
-        </Button>
-      </SpaceBetween>
-    </Box>
-  );
-
-  // Quick start cards for empty dashboard
-  const QuickStartCards = () => (
-    <Container header={<Header variant="h2">Get started</Header>}>
-      <ColumnLayout columns={3} variant="text-grid">
-        <div
-          style={{ cursor: 'pointer' }}
-          onClick={handleGetStarted}
-        >
-          <SpaceBetween size="xs">
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '8px',
-              backgroundColor: 'var(--color-background-status-info)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <Icon name="add-plus" variant="link" />
-            </div>
-            <Box variant="h4">Create a database</Box>
-            <Box color="text-body-secondary" fontSize="body-s">
-              Set up a new Aurora DSQL cluster with AI-guided configuration.
-            </Box>
-            <Link>Get started</Link>
-          </SpaceBetween>
-        </div>
-        <div
-          style={{ cursor: 'pointer' }}
-          onClick={() => navigate('/import-data')}
-        >
-          <SpaceBetween size="xs">
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '8px',
-              backgroundColor: 'var(--color-background-status-success)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <Icon name="upload" variant="success" />
-            </div>
-            <Box variant="h4">Import data</Box>
-            <Box color="text-body-secondary" fontSize="body-s">
-              Load sample datasets or import from external sources.
-            </Box>
-            <Link>Learn more</Link>
-          </SpaceBetween>
-        </div>
-        <div style={{ cursor: 'pointer' }}>
-          <SpaceBetween size="xs">
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '8px',
-              backgroundColor: 'var(--color-background-status-warning)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <Icon name="file" variant="warning" />
-            </div>
-            <Box variant="h4">Read the docs</Box>
-            <Box color="text-body-secondary" fontSize="body-s">
-              Learn about Aurora DSQL features and best practices.
-            </Box>
-            <Link external href="https://docs.aws.amazon.com">Documentation</Link>
-          </SpaceBetween>
-        </div>
-      </ColumnLayout>
-    </Container>
-  );
 
   // Activity feed component
   const ActivityFeed = () => {
@@ -206,6 +140,87 @@ export default function Dashboard() {
     );
   };
 
+  // Empty state - clean welcome screen with progressive disclosure
+  if (databases.length === 0) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        paddingTop: '80px',
+        padding: '80px 20px 40px 20px',
+      }}>
+        {/* Welcome text */}
+        <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+          <h1 style={{
+            fontSize: '42px',
+            fontWeight: 300,
+            color: 'var(--color-text-body-default)',
+            margin: '0 0 16px 0',
+            letterSpacing: '-1.26px',
+            lineHeight: '48px',
+          }}>
+            Welcome. Innovation Awaits.
+          </h1>
+          <p style={{
+            fontSize: '14px',
+            fontWeight: 700,
+            color: 'var(--color-text-body-secondary)',
+            margin: 0,
+            lineHeight: '18px',
+          }}>
+            Create, manage, and monitor your databases all in one place.
+          </p>
+        </div>
+
+        {/* Selection cards */}
+        <div style={{
+          display: 'flex',
+          gap: '20px',
+          marginBottom: '48px',
+          maxWidth: '800px',
+          width: '100%',
+        }}>
+          {/* Create card */}
+          <SelectableCard
+            selected={selectedAction === 'create'}
+            onClick={() => setSelectedAction('create')}
+          >
+            <Container>
+              <Box textAlign="center" padding={{ vertical: 'l' }}>
+                <Box variant="h2" margin={{ bottom: 'xs' }}>Create</Box>
+                <Box color="text-body-secondary">
+                  Create, connect, import data and start querying your database.
+                </Box>
+              </Box>
+            </Container>
+          </SelectableCard>
+
+          {/* Explore card */}
+          <SelectableCard
+            selected={selectedAction === 'explore'}
+            onClick={() => setSelectedAction('explore')}
+          >
+            <Container>
+              <Box textAlign="center" padding={{ vertical: 'l' }}>
+                <Box variant="h2" margin={{ bottom: 'xs' }}>Explore</Box>
+                <Box color="text-body-secondary">
+                  Learn about our database offerings, their features, and more.
+                </Box>
+              </Box>
+            </Container>
+          </SelectableCard>
+        </div>
+
+        {/* Continue button */}
+        <Button variant="primary" onClick={handleContinue}>
+          Continue
+        </Button>
+      </div>
+    );
+  }
+
+  // Dashboard with databases
   return (
     <ContentLayout
       defaultPadding
@@ -213,7 +228,7 @@ export default function Dashboard() {
         <Header
           variant="h1"
           actions={
-            <Button variant="primary" onClick={handleGetStarted}>
+            <Button variant="primary" onClick={() => navigate('/create-database')}>
               Create database
             </Button>
           }
@@ -264,60 +279,54 @@ export default function Dashboard() {
             header={
               <Header
                 variant="h2"
-                counter={databases.length > 0 ? `(${databases.length})` : undefined}
+                counter={`(${databases.length})`}
                 actions={
-                  databases.length > 0 ? (
-                    <Button onClick={() => navigate('/databases')}>View all</Button>
-                  ) : undefined
+                  <Button onClick={() => navigate('/databases')}>View all</Button>
                 }
               >
                 Database clusters
               </Header>
             }
           >
-            {databases.length === 0 ? (
-              <EmptyState />
-            ) : (
-              <Cards
-                items={databases.slice(0, 4)}
-                cardDefinition={{
-                  header: (item) => (
-                    <Link
-                      fontSize="heading-m"
-                      onFollow={(e) => {
-                        e.preventDefault();
-                        navigate('/database-details');
-                      }}
-                    >
-                      {item.name}
-                    </Link>
-                  ),
-                  sections: [
-                    {
-                      id: 'status',
-                      header: 'Status',
-                      content: (item) => (
-                        <StatusIndicator type={getStatusType(item.status)}>
-                          {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                        </StatusIndicator>
-                      ),
-                    },
-                    {
-                      id: 'engine',
-                      header: 'Engine',
-                      content: (item) => item.engine,
-                    },
-                    {
-                      id: 'region',
-                      header: 'Region',
-                      content: (item) => item.region,
-                    },
-                  ],
-                }}
-                cardsPerRow={[{ cards: 1 }, { minWidth: 500, cards: 2 }]}
-                trackBy="id"
-              />
-            )}
+            <Cards
+              items={databases.slice(0, 4)}
+              cardDefinition={{
+                header: (item) => (
+                  <Link
+                    fontSize="heading-m"
+                    onFollow={(e) => {
+                      e.preventDefault();
+                      navigate('/database-details');
+                    }}
+                  >
+                    {item.name}
+                  </Link>
+                ),
+                sections: [
+                  {
+                    id: 'status',
+                    header: 'Status',
+                    content: (item) => (
+                      <StatusIndicator type={getStatusType(item.status)}>
+                        {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                      </StatusIndicator>
+                    ),
+                  },
+                  {
+                    id: 'engine',
+                    header: 'Engine',
+                    content: (item) => item.engine,
+                  },
+                  {
+                    id: 'region',
+                    header: 'Region',
+                    content: (item) => item.region,
+                  },
+                ],
+              }}
+              cardsPerRow={[{ cards: 1 }, { minWidth: 500, cards: 2 }]}
+              trackBy="id"
+            />
           </Container>
 
           {/* Activity Feed */}
@@ -339,40 +348,35 @@ export default function Dashboard() {
           </Container>
         </Grid>
 
-        {/* Quick Start - only show when no databases */}
-        {databases.length === 0 && <QuickStartCards />}
-
-        {/* Resources section when databases exist */}
-        {databases.length > 0 && (
-          <Container header={<Header variant="h2">Quick actions</Header>}>
-            <ColumnLayout columns={4} variant="text-grid">
-              <div style={{ cursor: 'pointer' }} onClick={handleGetStarted}>
-                <SpaceBetween size="xxs">
-                  <Icon name="add-plus" />
-                  <Link>Create database</Link>
-                </SpaceBetween>
-              </div>
-              <div style={{ cursor: 'pointer' }} onClick={() => navigate('/import-data')}>
-                <SpaceBetween size="xxs">
-                  <Icon name="upload" />
-                  <Link>Import data</Link>
-                </SpaceBetween>
-              </div>
-              <div>
-                <SpaceBetween size="xxs">
-                  <Icon name="settings" />
-                  <Link onFollow={() => navigate('/settings')}>Settings</Link>
-                </SpaceBetween>
-              </div>
-              <div>
-                <SpaceBetween size="xxs">
-                  <Icon name="external" />
-                  <Link external href="https://docs.aws.amazon.com">Documentation</Link>
-                </SpaceBetween>
-              </div>
-            </ColumnLayout>
-          </Container>
-        )}
+        {/* Quick actions */}
+        <Container header={<Header variant="h2">Quick actions</Header>}>
+          <ColumnLayout columns={4} variant="text-grid">
+            <div style={{ cursor: 'pointer' }} onClick={() => navigate('/create-database')}>
+              <SpaceBetween size="xxs">
+                <Icon name="add-plus" />
+                <Link>Create database</Link>
+              </SpaceBetween>
+            </div>
+            <div style={{ cursor: 'pointer' }} onClick={() => navigate('/import-data')}>
+              <SpaceBetween size="xxs">
+                <Icon name="upload" />
+                <Link>Import data</Link>
+              </SpaceBetween>
+            </div>
+            <div>
+              <SpaceBetween size="xxs">
+                <Icon name="settings" />
+                <Link onFollow={() => navigate('/settings')}>Settings</Link>
+              </SpaceBetween>
+            </div>
+            <div>
+              <SpaceBetween size="xxs">
+                <Icon name="external" />
+                <Link external href="https://docs.aws.amazon.com">Documentation</Link>
+              </SpaceBetween>
+            </div>
+          </ColumnLayout>
+        </Container>
       </SpaceBetween>
     </ContentLayout>
   );

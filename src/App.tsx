@@ -4,6 +4,7 @@ import AppLayout from '@cloudscape-design/components/app-layout-toolbar';
 import Flashbar from '@cloudscape-design/components/flashbar';
 import BreadcrumbGroup from '@cloudscape-design/components/breadcrumb-group';
 import Navigation from './components/Navigation';
+import TopNav from './components/TopNav';
 import ChatInterface from './components/ChatInterface';
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
@@ -78,7 +79,9 @@ function AppContent() {
   const breadcrumbs = buildBreadcrumbs(location.pathname);
 
   return (
-    <AppLayout
+    <>
+      <TopNav />
+      <AppLayout
       contentType="default"
       breadcrumbs={
         <BreadcrumbGroup
@@ -131,19 +134,27 @@ function AppContent() {
         </Routes>
       }
     />
+    </>
   );
 }
 
 function App() {
   const { theme } = useAppStore();
 
+  // Apply dark mode class to document body for Cloudscape components
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.body.classList.add('awsui-dark-mode');
+    } else {
+      document.body.classList.remove('awsui-dark-mode');
+    }
+  }, [theme]);
+
   return (
     <ChatProvider>
-      <div className={theme === 'dark' ? 'awsui-dark-mode' : ''}>
-        <BrowserRouter>
-          <AppContent />
-        </BrowserRouter>
-      </div>
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
     </ChatProvider>
   );
 }

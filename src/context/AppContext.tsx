@@ -60,7 +60,7 @@ export const useAppStore = create<AppState>((set) => ({
   // Initial state
   products: mockProducts,
   notifications: [],
-  theme: 'light',
+  theme: 'dark',
   loading: false,
   databases: [],
   activities: [],

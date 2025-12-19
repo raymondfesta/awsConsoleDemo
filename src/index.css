@@ -64,3 +64,8 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* TopNavigation logo vertical alignment */
+[class*="top-navigation"] [class*="identity"] img {
+  vertical-align: middle;
+}

@@ -117,7 +117,7 @@ export default function ChatInterface() {
             <div style={{
               flex: 1,
               height: '1px',
-              backgroundColor: '#e9ebed',
+              backgroundColor: 'var(--color-border-divider-default)',
             }} />
             <StatusIndicator type="success">
               {message.stepCompleted}
@@ -125,7 +125,7 @@ export default function ChatInterface() {
             <div style={{
               flex: 1,
               height: '1px',
-              backgroundColor: '#e9ebed',
+              backgroundColor: 'var(--color-border-divider-default)',
             }} />
           </div>
         )}

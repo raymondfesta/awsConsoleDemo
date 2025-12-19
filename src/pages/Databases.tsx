@@ -11,7 +11,6 @@ import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import TextFilter from '@cloudscape-design/components/text-filter';
 import Pagination from '@cloudscape-design/components/pagination';
 import CollectionPreferences from '@cloudscape-design/components/collection-preferences';
-import Icon from '@cloudscape-design/components/icon';
 import { useAppStore, type DatabaseCluster } from '../context/AppContext';
 
 // Format date
@@ -113,46 +112,25 @@ export default function Databases() {
     navigate('/create-database');
   };
 
-  // Empty state
+  // Empty state - standard Cloudscape pattern
   const EmptyState = () => (
-    <Box textAlign="center" padding={{ vertical: 'xxxl' }}>
-      <SpaceBetween size="m" alignItems="center">
-        <div style={{
-          width: '80px',
-          height: '80px',
-          borderRadius: '50%',
-          backgroundColor: 'var(--color-background-status-info)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <Icon name="add-plus" size="big" variant="link" />
-        </div>
-        <Box variant="h3" fontWeight="normal">
-          No database clusters
-        </Box>
-        <Box variant="p" color="text-body-secondary">
-          Create your first Aurora DSQL cluster to get started.
-        </Box>
-        <Button variant="primary" onClick={handleCreateDatabase}>
-          Create database
-        </Button>
-      </SpaceBetween>
+    <Box textAlign="center" color="inherit">
+      <b>No database clusters</b>
+      <Box padding={{ bottom: 's' }} variant="p" color="inherit">
+        No database clusters to display.
+      </Box>
+      <Button onClick={handleCreateDatabase}>Create database</Button>
     </Box>
   );
 
-  // No match state
+  // No match state - standard Cloudscape pattern
   const NoMatchState = () => (
-    <Box textAlign="center" padding="l">
-      <SpaceBetween size="s" alignItems="center">
-        <Box variant="h4" fontWeight="normal">
-          No matches
-        </Box>
-        <Box color="text-body-secondary">
-          We can't find a match for "{filteringText}".
-        </Box>
-        <Button onClick={() => setFilteringText('')}>Clear filter</Button>
-      </SpaceBetween>
+    <Box textAlign="center" color="inherit">
+      <b>No matches</b>
+      <Box padding={{ bottom: 's' }} variant="p" color="inherit">
+        We can't find a match.
+      </Box>
+      <Button onClick={() => setFilteringText('')}>Clear filter</Button>
     </Box>
   );
 
