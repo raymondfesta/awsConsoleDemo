@@ -10,7 +10,6 @@ import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import TextFilter from '@cloudscape-design/components/text-filter';
 import Pagination from '@cloudscape-design/components/pagination';
 import Spinner from '@cloudscape-design/components/spinner';
-import Alert from '@cloudscape-design/components/alert';
 import { useAppStore, type DatabaseCluster } from '../context/AppContext';
 import { dsqlApi, rdsApi, type DSQLCluster, type RDSCluster } from '../services/api';
 
@@ -125,16 +124,15 @@ export default function Databases() {
 
   const [apiDatabases, setApiDatabases] = useState<DatabaseClusterWithType[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [filteringText, setFilteringText] = useState('');
   const [currentPageIndex, setCurrentPageIndex] = useState(1);
   const pageSize = 12;
 
   // Fetch databases from both DSQL and RDS APIs
+  // Note: API calls may fail in demo/static deployments without a backend
   useEffect(() => {
     const fetchDatabases = async () => {
       setLoading(true);
-      setError(null);
       try {
         const [dsqlClusters, rdsClusters] = await Promise.all([
           dsqlApi.getClusters(),
@@ -145,8 +143,10 @@ export default function Databases() {
         const mappedRds = rdsClusters.map(mapRdsCluster);
 
         setApiDatabases([...mappedDsql, ...mappedRds]);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load databases');
+      } catch {
+        // API may not be available in demo/static deployments
+        // Silently continue with local store databases only
+        setApiDatabases([]);
       } finally {
         setLoading(false);
       }
@@ -220,31 +220,6 @@ export default function Databases() {
           <Spinner size="large" />
           <Box variant="p" padding={{ top: 's' }}>Loading databases...</Box>
         </Box>
-      </ContentLayout>
-    );
-  }
-
-  if (error) {
-    return (
-      <ContentLayout
-        defaultPadding
-        header={
-          <Header
-            variant="h1"
-            description="View and manage all your AWS database resources."
-            actions={
-              <Button variant="primary" onClick={handleCreateDatabase} iconAlign="left" iconName="gen-ai">
-                Create database
-              </Button>
-            }
-          >
-            Database clusters
-          </Header>
-        }
-      >
-        <Alert type="error" header="Error loading databases">
-          {error}
-        </Alert>
       </ContentLayout>
     );
   }

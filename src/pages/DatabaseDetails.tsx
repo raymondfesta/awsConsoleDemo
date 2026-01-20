@@ -352,7 +352,7 @@ export default function DatabaseDetails() {
 
   // Get creation tracking state from ChatContext
   const { creationStatus, createdDatabaseId, onCreationComplete, clearCreationState } = useChatContext();
-  const { updateDatabase, populatedDatabases, populateDatabase, clearDatabaseData } = useAppStore();
+  const { databases: storeDatabases, updateDatabase, populatedDatabases, populateDatabase, clearDatabaseData } = useAppStore();
 
   // Get populated data for this database
   const populatedData = id ? populatedDatabases[id] : undefined;
@@ -457,9 +457,20 @@ export default function DatabaseDetails() {
         } else {
           setError('Invalid database type');
         }
-      } catch (err) {
-        // If we're in creation mode, don't show error - use placeholder data
-        if (isCreating) {
+      } catch {
+        // API may not be available - try to use local store data
+        const localDb = storeDatabases.find(db => db.id === id);
+        if (localDb) {
+          // Convert local store database to DSQLCluster format
+          setDatabase({
+            id: localDb.id,
+            arn: `arn:aws:dsql:${localDb.region}:123456789:cluster/${localDb.id}`,
+            status: localDb.status === 'active' ? 'ACTIVE' : localDb.status.toUpperCase(),
+            endpoint: localDb.endpoint || `${localDb.id}.dsql.${localDb.region}.on.aws`,
+            createdAt: localDb.createdAt,
+          } as DSQLCluster);
+        } else if (isCreating) {
+          // If we're in creation mode, use placeholder data
           setDatabase({
             id: id,
             arn: `arn:aws:dsql:us-east-1:123456789:cluster/${id}`,
@@ -468,7 +479,7 @@ export default function DatabaseDetails() {
             createdAt: new Date(),
           } as DSQLCluster);
         } else {
-          setError(err instanceof Error ? err.message : 'Failed to load database');
+          setError('Database not found. The backend API may not be available.');
         }
       } finally {
         setLoading(false);
