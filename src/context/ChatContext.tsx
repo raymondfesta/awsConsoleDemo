@@ -247,6 +247,73 @@ interface PromptResponse {
 
 // Mapping of prompt IDs to their specific responses
 const PROMPT_RESPONSES: Record<string, PromptResponse> = {
+  // === INITIAL QUICK-START PROMPTS ===
+  'ecommerce-analytics': {
+    message: `Great choice! E-commerce analytics requires handling high read volumes for dashboards while managing concurrent data updates. Aurora DSQL's PostgreSQL compatibility and automatic scaling make it ideal for this use case.
+
+How many products and orders are you expecting to track?`,
+    nextPrompts: [
+      { id: 'under-50', text: 'Under 10,000 products' },
+      { id: '50-200', text: '10,000-100,000 products' },
+      { id: '200-plus', text: '100,000+ products' },
+    ],
+    feedbackEnabled: true,
+  },
+  'ecommerce-inventory': {
+    message: `Product inventory management needs real-time stock tracking and high write throughput for updates. Aurora DSQL handles concurrent inventory operations excellently.
+
+What's the scale of your product catalog?`,
+    nextPrompts: [
+      { id: 'under-50', text: 'Under 10,000 SKUs' },
+      { id: '50-200', text: '10,000-100,000 SKUs' },
+      { id: '200-plus', text: '100,000+ SKUs' },
+    ],
+    feedbackEnabled: true,
+  },
+  'cms': {
+    message: `A Content Management System needs to handle hierarchical content relationships, full-text search, and concurrent editing. Aurora DSQL with PostgreSQL's built-in capabilities is a great fit.
+
+What's your expected content volume?`,
+    nextPrompts: [
+      { id: 'under-50', text: 'Under 1,000 articles' },
+      { id: '50-200', text: '1,000-10,000 articles' },
+      { id: '200-plus', text: '10,000+ articles' },
+    ],
+    feedbackEnabled: true,
+  },
+  'financial-logging': {
+    message: `Financial transaction logging requires strong ACID compliance, audit trails, and high write throughput. Aurora DSQL's automatic scaling and strong consistency guarantees make it perfect for this use case.
+
+What's your expected transaction volume?`,
+    nextPrompts: [
+      { id: 'under-50', text: 'Under 10,000 transactions/day' },
+      { id: '50-200', text: '10,000-100,000 transactions/day' },
+      { id: '200-plus', text: '100,000+ transactions/day' },
+    ],
+    feedbackEnabled: true,
+  },
+  'clone-database': {
+    message: `I can help you clone an existing database. This creates an exact copy of your source database with all data and schema.
+
+Which database would you like to clone?`,
+    nextPrompts: [
+      { id: 'under-50', text: 'A small database (< 10 GB)' },
+      { id: '50-200', text: 'A medium database (10-100 GB)' },
+      { id: '200-plus', text: 'A large database (100+ GB)' },
+    ],
+    feedbackEnabled: true,
+  },
+  'migrate-ec2': {
+    message: `I'll help you migrate your EC2-hosted database to Aurora. This provides better scalability, automated backups, and reduced operational overhead.
+
+What database engine are you currently running on EC2?`,
+    nextPrompts: [
+      { id: 'under-50', text: 'PostgreSQL' },
+      { id: '50-200', text: 'MySQL/MariaDB' },
+      { id: '200-plus', text: 'Other' },
+    ],
+    feedbackEnabled: true,
+  },
   // === CREATE DATABASE SCRIPT - Scale Selection ===
   'under-50': {
     message: `Perfect! For under 50 restaurants, here's my recommended configuration:
@@ -3338,8 +3405,88 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setCreatedDatabaseName(null);
   }, []);
 
-  // Send message to Bedrock API
-  const sendToAPI = useCallback(async (userContent: string) => {
+  // Helper to find a demo response for user input (fallback when API unavailable)
+  const findDemoResponse = useCallback((userContent: string, promptId?: string): PromptResponse | null => {
+    // First, try exact prompt ID match
+    if (promptId && PROMPT_RESPONSES[promptId]) {
+      return PROMPT_RESPONSES[promptId];
+    }
+
+    // Try to find matching prompt in currentPrompts by text
+    const matchingPrompt = currentPrompts.find(p =>
+      p.text.toLowerCase() === userContent.toLowerCase()
+    );
+    if (matchingPrompt && PROMPT_RESPONSES[matchingPrompt.id]) {
+      return PROMPT_RESPONSES[matchingPrompt.id];
+    }
+
+    return null;
+  }, [currentPrompts]);
+
+  // Apply a demo response (message, configUpdates, nextPrompts, etc.)
+  const applyDemoResponse = useCallback((response: PromptResponse) => {
+    addMessage({
+      type: 'agent',
+      content: response.message,
+      feedbackEnabled: response.feedbackEnabled,
+      actions: response.actions,
+      stepCompleted: response.stepCompleted,
+      recommendationMeta: response.recommendationMeta,
+    });
+
+    // Apply config section updates
+    if (response.configUpdates) {
+      setWorkflow(prev => {
+        const newConfigSections = { ...prev.configSections };
+        for (const update of response.configUpdates!) {
+          newConfigSections[update.sectionId] = {
+            ...newConfigSections[update.sectionId],
+            status: update.status,
+            values: update.values || newConfigSections[update.sectionId].values,
+          };
+        }
+        return { ...prev, configSections: newConfigSections };
+      });
+    }
+
+    // Update workflow step if specified
+    if (response.updateStep) {
+      setWorkflow(prev => ({
+        ...prev,
+        steps: prev.steps.map(s =>
+          s.id === response.updateStep!.stepId
+            ? { ...s, status: response.updateStep!.status }
+            : s
+        ),
+      }));
+    }
+
+    // Update prompts
+    if (response.nextPrompts) {
+      setCurrentPrompts(response.nextPrompts);
+      setShowPrompts(true);
+    } else {
+      setShowPrompts(false);
+    }
+  }, [addMessage]);
+
+  // Get initial demo response for free-form user input
+  const getInitialDemoResponse = useCallback((): PromptResponse => {
+    return {
+      message: `Great! Based on your requirements, I'd recommend Aurora DSQL - it handles high write throughput while maintaining strong consistency.
+
+How many users/records are you planning to support initially?`,
+      nextPrompts: [
+        { id: 'under-50', text: 'Under 50 restaurants' },
+        { id: '50-200', text: '50-200 restaurants' },
+        { id: '200-plus', text: '200+ restaurants' },
+      ],
+      feedbackEnabled: true,
+    };
+  }, []);
+
+  // Send message to Bedrock API with demo fallback
+  const sendToAPI = useCallback(async (userContent: string, promptId?: string) => {
     // Add user message to conversation history
     conversationRef.current.push({ role: 'user', content: userContent });
 
@@ -3373,14 +3520,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setShowPrompts(false);
       }
     } catch (error) {
-      addMessage({
-        type: 'agent',
-        content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`,
-      });
+      // Demo fallback: Try to find a matching demo response when API unavailable
+      const demoResponse = findDemoResponse(userContent, promptId);
+
+      if (demoResponse) {
+        applyDemoResponse(demoResponse);
+      } else if (workflow.view === 'entry' || workflow.view === 'chat') {
+        // For free-form initial messages, start demo flow
+        applyDemoResponse(getInitialDemoResponse());
+      } else {
+        addMessage({
+          type: 'agent',
+          content: `I'm running in demo mode. Please use the suggested prompts to continue.`,
+        });
+        if (currentPrompts.length > 0) {
+          setShowPrompts(true);
+        }
+      }
     } finally {
       setIsAgentTyping(false);
     }
-  }, [workflow.config?.id, workflow.selectedOption, addMessage]);
+  }, [workflow.config?.id, workflow.selectedOption, workflow.view, addMessage, currentPrompts, findDemoResponse, applyDemoResponse, getInitialDemoResponse]);
 
   // Run the next demo step
   const executeDemoStep = useCallback(async (stepIndex: number) => {
@@ -3584,8 +3744,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Send prompt text to Bedrock API
-      sendToAPI(prompt.text);
+      // Send prompt text to Bedrock API (with prompt ID for demo fallback)
+      sendToAPI(prompt.text, promptId);
     }
   }, [currentPrompts, addMessage, sendToAPI, startWorkflowInContext]);
 
