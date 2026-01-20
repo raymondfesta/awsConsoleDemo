@@ -1,19 +1,33 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ContentLayout from '@cloudscape-design/components/content-layout';
 import Container from '@cloudscape-design/components/container';
 import Header from '@cloudscape-design/components/header';
 import SpaceBetween from '@cloudscape-design/components/space-between';
 import Box from '@cloudscape-design/components/box';
-import ColumnLayout from '@cloudscape-design/components/column-layout';
 import Button from '@cloudscape-design/components/button';
-import Link from '@cloudscape-design/components/link';
-import Cards from '@cloudscape-design/components/cards';
-import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import Icon from '@cloudscape-design/components/icon';
 import Grid from '@cloudscape-design/components/grid';
+import LineChart from '@cloudscape-design/components/line-chart';
+import AreaChart from '@cloudscape-design/components/area-chart';
+import PieChart from '@cloudscape-design/components/pie-chart';
+import Badge from '@cloudscape-design/components/badge';
 import { useAppStore, type DatabaseCluster, type ActivityEvent } from '../context/AppContext';
-import { useChatContext } from '../context/ChatContext';
+import { ALERT_SUMMARY } from '../data/alertsMockData';
+import { MOCK_RECOMMENDATIONS } from '../data/recommendationsMockData';
+import { MOCK_INVESTIGATIONS } from '../data/investigationsMockData';
+
+// Generate mock time series data for charts
+function generateTimeSeriesData(hours: number, baseValue: number, variance: number) {
+  const now = new Date();
+  const data = [];
+  for (let i = hours; i >= 0; i--) {
+    const time = new Date(now.getTime() - i * 60 * 60 * 1000);
+    const value = Math.max(0, baseValue + Math.floor(Math.random() * variance * 2 - variance));
+    data.push({ x: time, y: value });
+  }
+  return data;
+}
 
 // Format relative time
 function formatRelativeTime(date: Date): string {
@@ -29,17 +43,6 @@ function formatRelativeTime(date: Date): string {
   return `${diffDays}d ago`;
 }
 
-// Get status indicator type
-function getStatusType(status: DatabaseCluster['status']): 'success' | 'warning' | 'error' | 'loading' {
-  switch (status) {
-    case 'active': return 'success';
-    case 'creating': return 'loading';
-    case 'stopped': return 'warning';
-    case 'error': return 'error';
-    default: return 'loading';
-  }
-}
-
 // Get activity icon
 function getActivityIcon(type: ActivityEvent['type']): 'status-positive' | 'upload' | 'status-info' | 'status-negative' {
   switch (type) {
@@ -50,6 +53,55 @@ function getActivityIcon(type: ActivityEvent['type']): 'status-positive' | 'uplo
     case 'error': return 'status-negative';
     default: return 'status-info';
   }
+}
+
+// Calculate engine distribution from databases
+function calculateEngineDistribution(databases: DatabaseCluster[]) {
+  const engineColors: Record<string, string> = {
+    'Amazon Aurora PostgreSQL': '#ff9900',
+    'Amazon DynamoDB': '#3366cc',
+    'Amazon RDS for MySQL': '#dd3333',
+    'Amazon ElastiCache for Redis': '#22aa22',
+    'Amazon DocumentDB': '#9933cc',
+    'Amazon Neptune': '#00cccc',
+    'Amazon Timestream': '#cc6600',
+    'Amazon MemoryDB for Redis': '#6699cc',
+  };
+
+  const counts = databases.reduce((acc, db) => {
+    acc[db.engine] = (acc[db.engine] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  return Object.entries(counts).map(([engine, count]) => ({
+    title: engine.replace('Amazon ', ''),
+    value: count,
+    color: engineColors[engine] || '#888888',
+  }));
+}
+
+// Calculate regional distribution
+function calculateRegionalDistribution(databases: DatabaseCluster[]) {
+  const regionColors: Record<string, string> = {
+    'us-east-1': '#0972d3',
+    'us-east-2': '#9933cc',
+    'us-west-1': '#cc6600',
+    'us-west-2': '#ff9900',
+    'eu-west-1': '#22aa22',
+    'eu-central-1': '#00cccc',
+    'ap-southeast-1': '#dd3333',
+  };
+
+  const counts = databases.reduce((acc, db) => {
+    acc[db.region] = (acc[db.region] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  return Object.entries(counts).map(([region, count]) => ({
+    title: region,
+    value: count,
+    color: regionColors[region] || '#888888',
+  }));
 }
 
 // Tile-style selectable card matching Cloudscape Tiles selected state
@@ -87,27 +139,97 @@ const SelectableCard = ({
   </div>
 );
 
+// Alert Summary Banner - links to Alerts page
+function AlertSummaryBanner({ onClick }: { onClick: () => void }) {
+  return (
+    <div
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
+      style={{
+        background: 'linear-gradient(90deg, #d91515 0%, #ff9900 100%)',
+        borderRadius: '8px',
+        padding: '16px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        cursor: 'pointer',
+      }}
+    >
+      <SpaceBetween direction="horizontal" size="l" alignItems="center">
+        <Icon name="status-warning" variant="inverted" size="big" />
+        <SpaceBetween size="xxxs">
+          <Box fontSize="body-s" fontWeight="bold">
+            <span style={{ color: 'white' }}>Active Alerts</span>
+          </Box>
+          <SpaceBetween direction="horizontal" size="m">
+            <Badge color="red">{ALERT_SUMMARY.critical} Critical</Badge>
+            <Badge color="grey">{ALERT_SUMMARY.warning} Warning</Badge>
+            <Badge color="blue">{ALERT_SUMMARY.predictive} Predictive</Badge>
+          </SpaceBetween>
+        </SpaceBetween>
+      </SpaceBetween>
+      <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+        <span style={{ color: 'white' }}>View All</span>
+        <Icon name="angle-right" variant="inverted" />
+      </SpaceBetween>
+    </div>
+  );
+}
+
+// Compact recommendation card for dashboard preview
+function RecommendationPreview({ recommendation }: { recommendation: typeof MOCK_RECOMMENDATIONS[0] }) {
+  return (
+    <div style={{
+      padding: '12px',
+      borderBottom: '1px solid var(--color-border-divider-default)',
+    }}>
+      <SpaceBetween size="xxs">
+        <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+          <Badge color={recommendation.severity === 'high' ? 'red' : 'blue'}>
+            {recommendation.severity}
+          </Badge>
+          <Badge color="green">{recommendation.confidence}%</Badge>
+        </SpaceBetween>
+        <Box fontWeight="bold" fontSize="body-s">{recommendation.title}</Box>
+        <Box color="text-body-secondary" fontSize="body-s">
+          {recommendation.timeframe} - {recommendation.database}
+        </Box>
+      </SpaceBetween>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { databases, activities } = useAppStore();
-  const { setDrawerOpen } = useChatContext();
   const [selectedAction, setSelectedAction] = useState<'create' | 'explore'>('create');
 
-  // Open chat drawer by default when dashboard is in empty state
-  useEffect(() => {
-    if (databases.length === 0) {
-      setDrawerOpen(true);
-    }
-  }, [databases.length, setDrawerOpen]);
 
   // Calculate stats
   const activeDatabases = databases.filter(db => db.status === 'active').length;
   const totalConnections = databases.reduce((sum, db) => sum + (db.connections || 0), 0);
+  const totalStorage = databases.reduce((sum, db) => {
+    const storageNum = parseInt(db.storage?.replace(/[^0-9]/g, '') || '0');
+    return sum + storageNum;
+  }, 0);
+  const estimatedMonthlyCost = databases.length * 450; // Mock ~$450/db average
+
+  // Calculate distribution data (memoized)
+  const engineDistribution = useMemo(() => calculateEngineDistribution(databases), [databases]);
+  const regionalDistribution = useMemo(() => calculateRegionalDistribution(databases), [databases]);
+
+  // Generate chart data (memoized to prevent regeneration on every render)
+  const chartData = useMemo(() => ({
+    connections: generateTimeSeriesData(24, totalConnections > 0 ? totalConnections * 10 : 50, 20),
+    readOps: generateTimeSeriesData(24, 1200, 400),
+    writeOps: generateTimeSeriesData(24, 450, 150),
+  }), [totalConnections]);
 
   // Handle continue based on selection
   const handleContinue = () => {
     if (selectedAction === 'create') {
-      setDrawerOpen(false);
       navigate('/create-database');
     } else {
       navigate('/databases');
@@ -238,10 +360,7 @@ export default function Dashboard() {
         <Header
           variant="h1"
           actions={
-            <Button variant="primary" onClick={() => {
-              setDrawerOpen(false);
-              navigate('/create-database');
-            }}>
+            <Button variant="primary" onClick={() => navigate('/create-database')} iconAlign="left" iconName="gen-ai">
               Create database
             </Button>
           }
@@ -252,7 +371,7 @@ export default function Dashboard() {
       }
     >
       <SpaceBetween size="l">
-        {/* Stats Overview */}
+        {/* Stats Overview - Row 1 */}
         <Grid
           gridDefinition={[
             { colspan: { default: 12, s: 4 } },
@@ -274,76 +393,229 @@ export default function Dashboard() {
           </Container>
           <Container>
             <SpaceBetween size="xs">
-              <Box color="text-body-secondary" fontSize="body-s">Active connections</Box>
+              <Box color="text-body-secondary" fontSize="body-s">Total connections</Box>
               <Box variant="h1" fontSize="display-l">{totalConnections}</Box>
             </SpaceBetween>
           </Container>
         </Grid>
 
+        {/* Stats Overview - Row 2 */}
+        <Grid
+          gridDefinition={[
+            { colspan: { default: 12, s: 4 } },
+            { colspan: { default: 12, s: 4 } },
+            { colspan: { default: 12, s: 4 } },
+          ]}
+        >
+          <Container>
+            <SpaceBetween size="xs">
+              <Box color="text-body-secondary" fontSize="body-s">Total storage</Box>
+              <Box variant="h1" fontSize="display-l">{totalStorage} GB</Box>
+            </SpaceBetween>
+          </Container>
+          <Container>
+            <SpaceBetween size="xs">
+              <Box color="text-body-secondary" fontSize="body-s">Est. monthly cost</Box>
+              <Box variant="h1" fontSize="display-l">${estimatedMonthlyCost.toLocaleString()}</Box>
+            </SpaceBetween>
+          </Container>
+          <Container>
+            <SpaceBetween size="xs">
+              <Box color="text-body-secondary" fontSize="body-s">Active alerts</Box>
+              <Box variant="h1" fontSize="display-l" color="text-status-error">
+                {ALERT_SUMMARY.critical + ALERT_SUMMARY.warning}
+              </Box>
+            </SpaceBetween>
+          </Container>
+        </Grid>
+
+        {/* Charts Grid */}
+        <Grid
+          gridDefinition={[
+            { colspan: { default: 12, l: 6 } },
+            { colspan: { default: 12, l: 6 } },
+          ]}
+        >
+          {/* Connections Chart */}
+          <Container
+            fitHeight
+            header={<Header variant="h2">Connections over time</Header>}
+          >
+            <LineChart
+              series={[
+                {
+                  title: 'Active connections',
+                  type: 'line',
+                  data: chartData.connections,
+                },
+              ]}
+              xDomain={[
+                chartData.connections[0]?.x || new Date(),
+                chartData.connections[chartData.connections.length - 1]?.x || new Date(),
+              ]}
+              yDomain={[0, Math.max(...chartData.connections.map(d => d.y)) + 20]}
+              xScaleType="time"
+              xTitle="Time"
+              yTitle="Connections"
+              height={200}
+              hideFilter
+              hideLegend
+              ariaLabel="Connections over time line chart"
+              i18nStrings={{
+                xTickFormatter: (value) => {
+                  const date = new Date(value);
+                  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                },
+              }}
+              empty={
+                <Box textAlign="center" color="inherit">
+                  <b>No data available</b>
+                </Box>
+              }
+            />
+          </Container>
+
+          {/* Database Operations Chart */}
+          <Container
+            fitHeight
+            header={<Header variant="h2">Database operations</Header>}
+          >
+            <AreaChart
+              series={[
+                {
+                  title: 'Read operations',
+                  type: 'area',
+                  data: chartData.readOps,
+                },
+                {
+                  title: 'Write operations',
+                  type: 'area',
+                  data: chartData.writeOps,
+                },
+              ]}
+              xDomain={[
+                chartData.readOps[0]?.x || new Date(),
+                chartData.readOps[chartData.readOps.length - 1]?.x || new Date(),
+              ]}
+              yDomain={[0, Math.max(...chartData.readOps.map(d => d.y), ...chartData.writeOps.map(d => d.y)) + 200]}
+              xScaleType="time"
+              xTitle="Time"
+              yTitle="Operations/hour"
+              height={200}
+              hideFilter
+              ariaLabel="Database operations area chart"
+              i18nStrings={{
+                xTickFormatter: (value) => {
+                  const date = new Date(value);
+                  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                },
+              }}
+              empty={
+                <Box textAlign="center" color="inherit">
+                  <b>No data available</b>
+                </Box>
+              }
+            />
+          </Container>
+        </Grid>
+
+        {/* Distribution Charts */}
+        <Grid
+          gridDefinition={[
+            { colspan: { default: 12, m: 6 } },
+            { colspan: { default: 12, m: 6 } },
+          ]}
+        >
+          {/* Engine Distribution */}
+          <Container fitHeight header={<Header variant="h2">Database engines</Header>}>
+            <PieChart
+              data={engineDistribution}
+              detailPopoverContent={(datum) => [
+                { key: 'Count', value: datum.value },
+              ]}
+              segmentDescription={(datum, sum) =>
+                `${datum.value} databases (${((datum.value / sum) * 100).toFixed(0)}%)`
+              }
+              hideFilter
+              size="medium"
+              variant="donut"
+              innerMetricDescription="total"
+              innerMetricValue={String(databases.length)}
+              ariaLabel="Database engine distribution pie chart"
+            />
+          </Container>
+
+          {/* Regional Distribution */}
+          <Container fitHeight header={<Header variant="h2">Regional distribution</Header>}>
+            <PieChart
+              data={regionalDistribution}
+              detailPopoverContent={(datum) => [
+                { key: 'Databases', value: datum.value },
+              ]}
+              segmentDescription={(datum, sum) =>
+                `${datum.value} databases (${((datum.value / sum) * 100).toFixed(0)}%)`
+              }
+              hideFilter
+              size="medium"
+              variant="donut"
+              innerMetricDescription="regions"
+              innerMetricValue={String(regionalDistribution.length)}
+              ariaLabel="Regional distribution pie chart"
+            />
+          </Container>
+        </Grid>
+
+        {/* Alert Summary Banner */}
+        <AlertSummaryBanner onClick={() => navigate('/alerts')} />
+
         {/* Main Content Grid */}
         <Grid
           gridDefinition={[
-            { colspan: { default: 12, l: 8 } },
-            { colspan: { default: 12, l: 4 } },
+            { colspan: { default: 12, l: 6 } },
+            { colspan: { default: 12, l: 6 } },
           ]}
         >
-          {/* Database Clusters */}
+          {/* AI Investigations */}
           <Container
+            fitHeight
             header={
               <Header
                 variant="h2"
-                counter={`(${databases.length})`}
-                actions={
-                  <Button onClick={() => navigate('/databases')}>View all</Button>
-                }
+                actions={<Button onClick={() => navigate('/investigations')}>View all</Button>}
               >
-                Database clusters
+                AI Investigations
               </Header>
             }
           >
-            <Cards
-              items={databases.slice(0, 4)}
-              cardDefinition={{
-                header: (item) => (
-                  <Link
-                    fontSize="heading-m"
-                    onFollow={(e) => {
-                      e.preventDefault();
-                      navigate('/database-details');
-                    }}
-                  >
-                    {item.name}
-                  </Link>
-                ),
-                sections: [
-                  {
-                    id: 'status',
-                    header: 'Status',
-                    content: (item) => (
-                      <StatusIndicator type={getStatusType(item.status)}>
-                        {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                      </StatusIndicator>
-                    ),
-                  },
-                  {
-                    id: 'engine',
-                    header: 'Engine',
-                    content: (item) => item.engine,
-                  },
-                  {
-                    id: 'region',
-                    header: 'Region',
-                    content: (item) => item.region,
-                  },
-                ],
-              }}
-              cardsPerRow={[{ cards: 1 }, { minWidth: 500, cards: 2 }]}
-              trackBy="id"
-            />
+            <SpaceBetween size="m">
+              <Grid
+                gridDefinition={[
+                  { colspan: 6 },
+                  { colspan: 6 },
+                ]}
+              >
+                <SpaceBetween size="xs">
+                  <Box color="text-body-secondary" fontSize="body-s">Completed</Box>
+                  <Box variant="h1" fontSize="display-l">
+                    {MOCK_INVESTIGATIONS.filter(i => i.status === 'completed').length}
+                  </Box>
+                </SpaceBetween>
+                <SpaceBetween size="xs">
+                  <Box color="text-body-secondary" fontSize="body-s">In progress</Box>
+                  <Box variant="h1" fontSize="display-l">
+                    {MOCK_INVESTIGATIONS.filter(i => i.status === 'in_progress').length}
+                  </Box>
+                </SpaceBetween>
+              </Grid>
+              <Button variant="primary" iconName="gen-ai" onClick={() => navigate('/investigations')}>
+                Start investigation
+              </Button>
+            </SpaceBetween>
           </Container>
 
           {/* Activity Feed */}
           <Container
+            fitHeight
             header={
               <Header
                 variant="h2"
@@ -361,40 +633,22 @@ export default function Dashboard() {
           </Container>
         </Grid>
 
-        {/* Quick actions */}
-        <Container header={<Header variant="h2">Quick actions</Header>}>
-          <ColumnLayout columns={4} variant="text-grid">
-            <div style={{ cursor: 'pointer' }} onClick={() => {
-              setDrawerOpen(false);
-              navigate('/create-database');
-            }}>
-              <SpaceBetween size="xxs">
-                <Icon name="add-plus" />
-                <Link>Create database</Link>
-              </SpaceBetween>
-            </div>
-            <div style={{ cursor: 'pointer' }} onClick={() => {
-              setDrawerOpen(false);
-              navigate('/import-data');
-            }}>
-              <SpaceBetween size="xxs">
-                <Icon name="upload" />
-                <Link>Import data</Link>
-              </SpaceBetween>
-            </div>
-            <div>
-              <SpaceBetween size="xxs">
-                <Icon name="settings" />
-                <Link onFollow={() => navigate('/settings')}>Settings</Link>
-              </SpaceBetween>
-            </div>
-            <div>
-              <SpaceBetween size="xxs">
-                <Icon name="external" />
-                <Link external href="https://docs.aws.amazon.com">Documentation</Link>
-              </SpaceBetween>
-            </div>
-          </ColumnLayout>
+        {/* Recommendations Section */}
+        <Container
+          header={
+            <Header
+              variant="h2"
+              actions={<Button onClick={() => navigate('/recommendations')}>View all</Button>}
+            >
+              Predictive recommendations
+            </Header>
+          }
+        >
+          <SpaceBetween size="xs">
+            {MOCK_RECOMMENDATIONS.slice(0, 4).map((rec) => (
+              <RecommendationPreview key={rec.id} recommendation={rec} />
+            ))}
+          </SpaceBetween>
         </Container>
       </SpaceBetween>
     </ContentLayout>

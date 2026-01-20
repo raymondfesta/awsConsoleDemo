@@ -6,7 +6,8 @@ import ChatPanel from './ChatPanel';
 import Box from '@cloudscape-design/components/box';
 import Container from '@cloudscape-design/components/container';
 import Header from '@cloudscape-design/components/header';
-import type { WorkflowConfig, ResourceInfo, Message } from './types';
+import { chatApi, type ConversationMessage } from '../../services/api';
+import type { WorkflowConfig, ResourceInfo } from './types';
 
 interface WorkflowChatProps {
   config: WorkflowConfig;
@@ -23,153 +24,112 @@ function WorkflowChatInner() {
     selectPrompt,
     confirmPromptSelection,
     transitionToView,
-    updateStep,
-    setResource,
+    updateStep: _updateStep,
+    setResource: _setResource,
     addAgentMessage,
     setPrompts,
     setAgentTyping,
   } = useWorkflowScript();
 
   const [chatPanelOpen, setChatPanelOpen] = useState(true);
-  const scriptStepRef = useRef(0);
-  const isProcessingRef = useRef(false);
+  const conversationRef = useRef<ConversationMessage[]>([]);
 
-  // Demo script simulation
-  const runDemoStep = useCallback(async (stepIndex: number) => {
-    if (isProcessingRef.current) return;
-    isProcessingRef.current = true;
+  // Send message to Bedrock API
+  const sendToAPI = useCallback(async (userContent: string) => {
+    // Add user message to conversation history
+    conversationRef.current.push({ role: 'user', content: userContent });
 
-    // Import the demo script
-    const { foodDeliveryScript } = await import('../../workflows/createDatabase');
+    setAgentTyping(true);
 
-    if (stepIndex >= foodDeliveryScript.length) {
-      isProcessingRef.current = false;
-      return;
+    try {
+      const response = await chatApi.sendMessage(conversationRef.current, {
+        currentPage: '/create-database',
+      });
+
+      // Add assistant response to history
+      conversationRef.current.push({ role: 'assistant', content: response.message });
+
+      // Add agent message with dynamic component
+      addAgentMessage({
+        type: 'agent',
+        content: response.message,
+        feedbackEnabled: true,
+        dynamicComponent: response.component,
+        suggestedActions: response.suggestedActions,
+        requiresConfirmation: response.requiresConfirmation,
+        confirmAction: response.confirmAction,
+      });
+
+      // Update prompts if provided
+      if (response.suggestedActions) {
+        setPrompts(response.suggestedActions);
+      }
+    } catch (error) {
+      addAgentMessage({
+        type: 'agent',
+        content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`,
+      });
+    } finally {
+      setAgentTyping(false);
     }
-
-    const step = foodDeliveryScript[stepIndex];
-
-    // Wait for delay
-    await new Promise((resolve) => setTimeout(resolve, step.delay || 1000));
-
-    // Transition view if needed
-    if (step.transitionToView) {
-      transitionToView(step.transitionToView);
-    }
-
-    // Update step status if needed
-    if (step.updateStep) {
-      updateStep(step.updateStep.stepId, step.updateStep.status);
-    }
-
-    // Create/update resource if needed
-    if (step.createResource) {
-      setResource(step.createResource);
-    }
-
-    // Add agent message
-    addAgentMessage(step.agentResponse);
-
-    // Update prompts if needed
-    if (step.nextPrompts) {
-      setPrompts(step.nextPrompts);
-    }
-
-    isProcessingRef.current = false;
-    scriptStepRef.current = stepIndex + 1;
-  }, [addAgentMessage, setPrompts, setResource, transitionToView, updateStep]);
+  }, [config.id, addAgentMessage, setPrompts, setAgentTyping]);
 
   // Handle user submitting from entry view
   const handleEntrySubmit = useCallback((message: string, _selectedOption: string | null) => {
     // Transition to conversation view
     transitionToView('conversation');
 
-    // Add user message
-    const userMessage: Message = {
-      id: `msg-${Date.now()}`,
-      type: 'user',
-      content: message,
-      timestamp: new Date(),
-    };
-    addAgentMessage({ ...userMessage, type: 'user' });
+    // Add user message to UI
+    addAgentMessage({ type: 'user', content: message });
 
-    // Start agent typing
-    setAgentTyping(true);
-
-    // Run first demo step after a delay
-    setTimeout(() => {
-      setAgentTyping(false);
-      runDemoStep(0);
-    }, 1500);
-  }, [transitionToView, addAgentMessage, setAgentTyping, runDemoStep]);
+    // Send to Bedrock API
+    sendToAPI(message);
+  }, [transitionToView, addAgentMessage, sendToAPI]);
 
   // Handle sending message in chat
   const handleSendMessage = useCallback((message: string) => {
-    // Add user message
-    addAgentMessage({
-      type: 'user',
-      content: message,
-    });
+    // Add user message to UI
+    addAgentMessage({ type: 'user', content: message });
 
-    setAgentTyping(true);
-
-    // Simulate agent response
-    setTimeout(() => {
-      setAgentTyping(false);
-      runDemoStep(scriptStepRef.current);
-    }, 1500);
-  }, [addAgentMessage, setAgentTyping, runDemoStep]);
+    // Send to Bedrock API
+    sendToAPI(message);
+  }, [addAgentMessage, sendToAPI]);
 
   // Handle action button clicks
   const handleActionClick = useCallback((actionId: string) => {
-    if (actionId === 'auto-setup') {
-      // Run the auto-setup sequence
-      runDemoStep(scriptStepRef.current);
-
-      // Chain the subsequent steps with delays
-      const runSequence = async () => {
-        await new Promise((r) => setTimeout(r, 2500));
-        await runDemoStep(scriptStepRef.current); // setup-progress-1
-        await new Promise((r) => setTimeout(r, 3000));
-        await runDemoStep(scriptStepRef.current); // setup-progress-2 (configure complete)
-      };
-      runSequence();
-    } else if (actionId === 'complete-setup') {
-      // Run completion sequence
-      const runCompletion = async () => {
-        await runDemoStep(scriptStepRef.current); // complete
-        await new Promise((r) => setTimeout(r, 2000));
-        await runDemoStep(scriptStepRef.current); // show next steps
-      };
-      runCompletion();
-    } else {
-      // Generic action handling
-      runDemoStep(scriptStepRef.current);
-    }
-  }, [runDemoStep]);
+    // Send action to Bedrock API as user message
+    const actionText = `Execute action: ${actionId}`;
+    addAgentMessage({ type: 'user', content: actionText });
+    sendToAPI(actionText);
+  }, [addAgentMessage, sendToAPI]);
 
   // Handle prompt selection
   const handlePromptSelect = useCallback((promptId: string) => {
+    // Find the prompt text
+    const prompt = state.currentPrompts.find(p => p.id === promptId);
+    if (prompt) {
+      // Add user message to UI with the prompt text
+      addAgentMessage({ type: 'user', content: prompt.text });
+      // Send to Bedrock API
+      sendToAPI(prompt.text);
+    }
     selectPrompt(promptId);
-
-    // For demo, immediately process and move to next step
-    setAgentTyping(true);
-    setTimeout(() => {
-      setAgentTyping(false);
-      runDemoStep(scriptStepRef.current);
-    }, 1200);
-  }, [selectPrompt, setAgentTyping, runDemoStep]);
+  }, [state.currentPrompts, addAgentMessage, sendToAPI, selectPrompt]);
 
   // Handle prompt confirmation (multi-select)
   const handlePromptsConfirm = useCallback(() => {
-    confirmPromptSelection();
+    // Get selected prompt texts
+    const selectedTexts = state.selectedPrompts
+      .map(id => state.currentPrompts.find(p => p.id === id)?.text)
+      .filter(Boolean)
+      .join(', ');
 
-    setAgentTyping(true);
-    setTimeout(() => {
-      setAgentTyping(false);
-      runDemoStep(scriptStepRef.current);
-    }, 1200);
-  }, [confirmPromptSelection, setAgentTyping, runDemoStep]);
+    if (selectedTexts) {
+      addAgentMessage({ type: 'user', content: selectedTexts });
+      sendToAPI(selectedTexts);
+    }
+    confirmPromptSelection();
+  }, [state.selectedPrompts, state.currentPrompts, addAgentMessage, sendToAPI, confirmPromptSelection]);
 
   // Render based on current view
   const renderView = () => {

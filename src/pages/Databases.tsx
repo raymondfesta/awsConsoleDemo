@@ -1,18 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ContentLayout from '@cloudscape-design/components/content-layout';
-import Table from '@cloudscape-design/components/table';
+import Cards from '@cloudscape-design/components/cards';
 import Header from '@cloudscape-design/components/header';
 import Button from '@cloudscape-design/components/button';
-import SpaceBetween from '@cloudscape-design/components/space-between';
 import Box from '@cloudscape-design/components/box';
 import Link from '@cloudscape-design/components/link';
 import StatusIndicator from '@cloudscape-design/components/status-indicator';
 import TextFilter from '@cloudscape-design/components/text-filter';
 import Pagination from '@cloudscape-design/components/pagination';
-import CollectionPreferences from '@cloudscape-design/components/collection-preferences';
+import Spinner from '@cloudscape-design/components/spinner';
+import Alert from '@cloudscape-design/components/alert';
 import { useAppStore, type DatabaseCluster } from '../context/AppContext';
-import { useChatContext } from '../context/ChatContext';
+import { dsqlApi, rdsApi, type DSQLCluster, type RDSCluster } from '../services/api';
+
+// Extended type to include database type for routing
+interface DatabaseClusterWithType extends DatabaseCluster {
+  dbType: 'dsql' | 'rds';
+}
 
 // Format date
 function formatDate(date: Date): string {
@@ -36,65 +41,130 @@ function getStatusType(status: DatabaseCluster['status']): 'success' | 'warning'
   }
 }
 
-// Column definitions
-const columnDefinitions = [
-  {
-    id: 'name',
-    header: 'Cluster name',
-    cell: (item: DatabaseCluster) => <Link href={`/database-details?id=${item.id}`}>{item.name}</Link>,
-    sortingField: 'name',
-    minWidth: 200,
-  },
-  {
-    id: 'status',
-    header: 'Status',
-    cell: (item: DatabaseCluster) => (
-      <StatusIndicator type={getStatusType(item.status)}>
-        {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-      </StatusIndicator>
-    ),
-    sortingField: 'status',
-    minWidth: 120,
-  },
-  {
-    id: 'engine',
-    header: 'Engine',
-    cell: (item: DatabaseCluster) => item.engine,
-    sortingField: 'engine',
-    minWidth: 150,
-  },
-  {
-    id: 'region',
-    header: 'Region',
-    cell: (item: DatabaseCluster) => item.region,
-    sortingField: 'region',
-    minWidth: 120,
-  },
-  {
-    id: 'endpoint',
-    header: 'Endpoint',
-    cell: (item: DatabaseCluster) => item.endpoint || '-',
-    minWidth: 250,
-  },
-  {
-    id: 'createdAt',
-    header: 'Created',
-    cell: (item: DatabaseCluster) => formatDate(item.createdAt),
-    sortingField: 'createdAt',
-    minWidth: 180,
-  },
-];
+// Map DSQL cluster to DatabaseClusterWithType
+function mapDsqlCluster(cluster: DSQLCluster): DatabaseClusterWithType {
+  // Extract region from ARN (format: arn:aws:dsql:region:account:cluster/id)
+  const arnParts = cluster.arn.split(':');
+  const region = arnParts[3] || 'us-east-1';
+
+  return {
+    id: cluster.id,
+    name: cluster.id,
+    engine: 'Aurora DSQL',
+    region,
+    status: cluster.status.toLowerCase() === 'active' ? 'active' :
+            cluster.status.toLowerCase() === 'creating' ? 'creating' :
+            cluster.status.toLowerCase() === 'deleting' ? 'stopped' : 'active',
+    endpoint: cluster.endpoint,
+    createdAt: new Date(cluster.createdAt),
+    dbType: 'dsql',
+  };
+}
+
+// Map RDS cluster to DatabaseClusterWithType
+function mapRdsCluster(cluster: RDSCluster): DatabaseClusterWithType {
+  return {
+    id: cluster.id,
+    name: cluster.name,
+    engine: cluster.engine,
+    region: cluster.region,
+    status: cluster.status.toLowerCase() === 'available' ? 'active' :
+            cluster.status.toLowerCase() === 'creating' ? 'creating' :
+            cluster.status.toLowerCase() === 'stopped' ? 'stopped' : 'active',
+    endpoint: cluster.endpoint,
+    createdAt: new Date(cluster.createdAt),
+    dbType: 'rds',
+  };
+}
+
+// Card definition for displaying database clusters
+const cardDefinition = {
+  header: (item: DatabaseClusterWithType) => (
+    <Link fontSize="heading-m" href={`/database-details?id=${item.id}&type=${item.dbType}`}>
+      {item.name}
+    </Link>
+  ),
+  sections: [
+    {
+      id: 'status',
+      header: 'Status',
+      content: (item: DatabaseClusterWithType) => (
+        <StatusIndicator type={getStatusType(item.status)}>
+          {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+        </StatusIndicator>
+      ),
+    },
+    {
+      id: 'engine',
+      header: 'Engine',
+      content: (item: DatabaseClusterWithType) => item.engine,
+    },
+    {
+      id: 'region',
+      header: 'Region',
+      content: (item: DatabaseClusterWithType) => item.region,
+    },
+    {
+      id: 'endpoint',
+      header: 'Endpoint',
+      content: (item: DatabaseClusterWithType) => item.endpoint || '-',
+    },
+    {
+      id: 'createdAt',
+      header: 'Created',
+      content: (item: DatabaseClusterWithType) => formatDate(item.createdAt),
+    },
+  ],
+};
 
 export default function Databases() {
   const navigate = useNavigate();
-  const { databases } = useAppStore();
-  const { setDrawerOpen } = useChatContext();
 
+  // Get databases from local store (includes newly created databases)
+  const storeDatabases = useAppStore((state) => state.databases);
+
+  const [apiDatabases, setApiDatabases] = useState<DatabaseClusterWithType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filteringText, setFilteringText] = useState('');
-  const [selectedItems, setSelectedItems] = useState<DatabaseCluster[]>([]);
   const [currentPageIndex, setCurrentPageIndex] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [visibleColumns, setVisibleColumns] = useState(['name', 'status', 'engine', 'region', 'createdAt']);
+  const pageSize = 12;
+
+  // Fetch databases from both DSQL and RDS APIs
+  useEffect(() => {
+    const fetchDatabases = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [dsqlClusters, rdsClusters] = await Promise.all([
+          dsqlApi.getClusters(),
+          rdsApi.getClusters(),
+        ]);
+
+        const mappedDsql = dsqlClusters.map(mapDsqlCluster);
+        const mappedRds = rdsClusters.map(mapRdsCluster);
+
+        setApiDatabases([...mappedDsql, ...mappedRds]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load databases');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDatabases();
+  }, []);
+
+  // Merge store databases with API databases (store takes priority for duplicates)
+  const databases: DatabaseClusterWithType[] = [
+    // Add store databases with dbType (default to dsql for locally created)
+    ...storeDatabases.map((db): DatabaseClusterWithType => ({
+      ...db,
+      dbType: 'dsql',
+    })),
+    // Add API databases that aren't already in the store
+    ...apiDatabases.filter((apiDb) => !storeDatabases.some((storeDb) => storeDb.id === apiDb.id)),
+  ];
 
   // Filter items
   const filteredItems = databases.filter((item) =>
@@ -109,9 +179,8 @@ export default function Databases() {
     currentPageIndex * pageSize
   );
 
-  // Handle create database
+  // Handle create database - navigate to workflow page
   const handleCreateDatabase = () => {
-    setDrawerOpen(false);
     navigate('/create-database');
   };
 
@@ -122,7 +191,7 @@ export default function Databases() {
       <Box padding={{ bottom: 's' }} variant="p" color="inherit">
         No database clusters to display.
       </Box>
-      <Button onClick={handleCreateDatabase}>Create database</Button>
+      <Button onClick={handleCreateDatabase} iconAlign="left" iconName="gen-ai">Create database</Button>
     </Box>
   );
 
@@ -137,25 +206,60 @@ export default function Databases() {
     </Box>
   );
 
+  if (loading) {
+    return (
+      <ContentLayout
+        defaultPadding
+        header={
+          <Header variant="h1" description="View and manage all your AWS database resources.">
+            Database clusters
+          </Header>
+        }
+      >
+        <Box textAlign="center" padding="xxl">
+          <Spinner size="large" />
+          <Box variant="p" padding={{ top: 's' }}>Loading databases...</Box>
+        </Box>
+      </ContentLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <ContentLayout
+        defaultPadding
+        header={
+          <Header
+            variant="h1"
+            description="View and manage all your AWS database resources."
+            actions={
+              <Button variant="primary" onClick={handleCreateDatabase} iconAlign="left" iconName="gen-ai">
+                Create database
+              </Button>
+            }
+          >
+            Database clusters
+          </Header>
+        }
+      >
+        <Alert type="error" header="Error loading databases">
+          {error}
+        </Alert>
+      </ContentLayout>
+    );
+  }
+
   return (
     <ContentLayout
       defaultPadding
       header={
         <Header
           variant="h1"
-          description="View and manage your Aurora DSQL database clusters"
+          description="View and manage all your AWS database resources."
           actions={
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button
-                disabled={selectedItems.length === 0}
-                onClick={() => {/* Delete action */}}
-              >
-                Delete
-              </Button>
-              <Button variant="primary" onClick={handleCreateDatabase}>
-                Create database
-              </Button>
-            </SpaceBetween>
+            <Button variant="primary" onClick={handleCreateDatabase} iconAlign="left" iconName="gen-ai">
+              Create database
+            </Button>
           }
           counter={databases.length > 0 ? `(${databases.length})` : undefined}
         >
@@ -163,17 +267,16 @@ export default function Databases() {
         </Header>
       }
     >
-      <Table
-        variant="full-page"
-        stickyHeader
-        columnDefinitions={columnDefinitions}
+      <Cards
+        cardDefinition={cardDefinition}
         items={paginatedItems}
-        selectionType="multi"
-        selectedItems={selectedItems}
-        onSelectionChange={({ detail }) => setSelectedItems(detail.selectedItems)}
         trackBy="id"
+        cardsPerRow={[
+          { cards: 1 },
+          { minWidth: 500, cards: 2 },
+          { minWidth: 992, cards: 3 },
+        ]}
         empty={filteringText ? <NoMatchState /> : <EmptyState />}
-        columnDisplay={visibleColumns.map((id) => ({ id, visible: true }))}
         filter={
           <TextFilter
             filteringPlaceholder="Search databases"
@@ -182,13 +285,7 @@ export default function Databases() {
           />
         }
         header={
-          <Header
-            counter={
-              selectedItems.length
-                ? `(${selectedItems.length}/${filteredItems.length})`
-                : `(${filteredItems.length})`
-            }
-          >
+          <Header counter={`(${filteredItems.length})`}>
             Clusters
           </Header>
         }
@@ -197,41 +294,6 @@ export default function Databases() {
             currentPageIndex={currentPageIndex}
             pagesCount={Math.ceil(filteredItems.length / pageSize)}
             onChange={({ detail }) => setCurrentPageIndex(detail.currentPageIndex)}
-          />
-        }
-        preferences={
-          <CollectionPreferences
-            title="Preferences"
-            confirmLabel="Confirm"
-            cancelLabel="Cancel"
-            preferences={{
-              pageSize,
-              visibleContent: visibleColumns,
-            }}
-            pageSizePreference={{
-              title: 'Page size',
-              options: [
-                { value: 10, label: '10 items' },
-                { value: 20, label: '20 items' },
-                { value: 50, label: '50 items' },
-              ],
-            }}
-            visibleContentPreference={{
-              title: 'Select visible columns',
-              options: [
-                {
-                  label: 'Cluster properties',
-                  options: columnDefinitions.map((col) => ({
-                    id: col.id,
-                    label: col.header,
-                  })),
-                },
-              ],
-            }}
-            onConfirm={({ detail }) => {
-              setPageSize(detail.pageSize || 10);
-              setVisibleColumns([...(detail.visibleContent || ['name', 'status', 'engine', 'region', 'createdAt'])]);
-            }}
           />
         }
       />

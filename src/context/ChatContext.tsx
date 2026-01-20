@@ -1,11 +1,14 @@
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
 import { useAppStore } from './AppContext';
+import { chatApi, type ConversationMessage } from '../services/api';
 
 // Types
 export type MessageType = 'user' | 'agent' | 'status' | 'error';
 export type StepStatus = 'pending' | 'in-progress' | 'success' | 'error';
 export type WorkflowView = 'entry' | 'chat' | 'design' | 'review';
 export type WorkflowPath = 'customize' | 'auto-setup' | null;
+export type DrawerExpansionMode = 'normal' | 'expanded';
+export type CreationStatus = 'idle' | 'creating' | 'completed' | 'error';
 
 // Configuration section types
 export type ConfigSectionId = 'cluster' | 'instance' | 'storage' | 'security';
@@ -39,6 +42,34 @@ export interface BuildProgressItem {
   status: 'pending' | 'success' | 'error';
 }
 
+export interface RecommendationSection {
+  title: string;
+  items: Record<string, string>;
+}
+
+export interface RecommendationMeta {
+  summary: {
+    engine: string;
+    instanceClass: string;
+    region: string;
+  };
+  sections: RecommendationSection[];
+}
+
+// Dynamic component from AI response
+export interface DynamicComponent {
+  type: string;
+  props: Record<string, unknown>;
+}
+
+// Confirmation action for user authorized actions
+export interface ConfirmAction {
+  label: string;
+  variant: 'primary' | 'normal';
+  action: string;
+  params?: Record<string, unknown>;
+}
+
 export interface Message {
   id: string;
   type: MessageType;
@@ -48,6 +79,14 @@ export interface Message {
   feedbackEnabled?: boolean;
   stepCompleted?: string; // Step title to show as completed status indicator
   buildProgress?: BuildProgressItem[]; // Progress items with status indicators
+  recommendationMeta?: RecommendationMeta; // Metadata for collapsible recommendation display
+  // NEW: Dynamic component from AI
+  dynamicComponent?: DynamicComponent;
+  // NEW: Suggested follow-up prompts from AI
+  suggestedActions?: SupportPrompt[];
+  // NEW: For user authorized actions pattern
+  requiresConfirmation?: boolean;
+  confirmAction?: ConfirmAction;
 }
 
 export interface SupportPrompt {
@@ -134,13 +173,31 @@ interface ChatContextType {
   isAgentTyping: boolean;
   isDrawerOpen: boolean;
 
+  // Drawer expansion state
+  drawerMode: DrawerExpansionMode;
+  setDrawerMode: (mode: DrawerExpansionMode) => void;
+  expandDrawerForWorkflow: () => void;
+
+  // SplitPanel state for configuration preview
+  splitPanelConfig: RecommendationMeta | null;
+  setSplitPanelConfig: (config: RecommendationMeta | null) => void;
+
+  // Database creation tracking state
+  creationStatus: CreationStatus;
+  createdDatabaseId: string | null;
+  createdDatabaseType: 'dsql' | 'rds' | null;
+  createdDatabaseName: string | null;
+  startDatabaseCreation: (databaseId: string, databaseType: 'dsql' | 'rds', databaseName: string) => void;
+  onCreationComplete: () => void;
+  clearCreationState: () => void;
+
   // Workflow state
   workflow: WorkflowState;
 
   // Chat actions
   sendMessage: (content: string) => void;
   selectPrompt: (promptId: string) => void;
-  triggerAction: (actionId: string) => void;
+  triggerAction: (actionId: string, params?: Record<string, unknown>) => void;
   setDrawerOpen: (open: boolean) => void;
 
   // Workflow actions
@@ -154,7 +211,7 @@ interface ChatContextType {
 
   // Demo script control
   runNextStep: () => void;
-  setDemoPath: (path: 'new' | 'clone' | 'migrate' | 'configure') => void;
+  setDemoPath: (path: 'new' | 'clone' | 'migrate' | 'configure' | 'ecommerce') => void;
 
   // Navigation
   setNavigateCallback: (callback: (path: string) => void) => void;
@@ -185,6 +242,7 @@ interface PromptResponse {
   updateStep?: { stepId: string; status: StepStatus }; // Update workflow step status
   skipToStep?: number; // Skip to a specific step in the script
   feedbackEnabled?: boolean;
+  recommendationMeta?: RecommendationMeta; // Metadata for collapsible recommendation display
 }
 
 // Mapping of prompt IDs to their specific responses
@@ -238,6 +296,53 @@ This smaller instance is cost-effective for your scale. Would you like to adjust
       { id: 'eu-west-1', text: 'Change to Europe (Ireland)' },
     ],
     feedbackEnabled: true,
+    recommendationMeta: {
+      summary: {
+        engine: 'Aurora DSQL',
+        instanceClass: 'db.r6g.medium',
+        region: 'us-east-1',
+      },
+      sections: [
+        {
+          title: 'Cluster Configuration',
+          items: {
+            'Cluster name': 'food-delivery-prod',
+            'Engine': 'Aurora DSQL (PostgreSQL 15.4)',
+            'Region': 'us-east-1 (N. Virginia)',
+          },
+        },
+        {
+          title: 'Instance',
+          items: {
+            'Instance class': 'db.r6g.medium',
+            'vCPU': '1 core',
+            'Memory': '8 GB RAM',
+            'Estimated cost': '~$0.125/hour (~$90/month)',
+            'Multi-AZ': 'Enabled (automatic failover)',
+          },
+        },
+        {
+          title: 'Storage & Performance',
+          items: {
+            'Storage type': 'Aurora Auto-scaling',
+            'Initial storage': '10 GB',
+            'Max storage': '500 GB (scales automatically)',
+            'IOPS': '3,000 baseline',
+            'Connection pooling': 'Enabled (max 50 connections)',
+          },
+        },
+        {
+          title: 'Security',
+          items: {
+            'Encryption at rest': 'AES-256 (AWS managed key)',
+            'Encryption in transit': 'TLS 1.3',
+            'Authentication': 'IAM + password',
+            'Public access': 'Disabled',
+            'VPC': 'Default VPC with private subnets',
+          },
+        },
+      ],
+    },
   },
   '50-200': {
     message: `Perfect! For 50-200 restaurants, here's my recommended configuration:
@@ -283,6 +388,53 @@ This configuration can handle ~500 concurrent orders and supports your expected 
       { id: 'eu-west-1', text: 'Change to Europe (Ireland)' },
     ],
     feedbackEnabled: true,
+    recommendationMeta: {
+      summary: {
+        engine: 'Aurora DSQL',
+        instanceClass: 'db.r6g.large',
+        region: 'us-east-1',
+      },
+      sections: [
+        {
+          title: 'Cluster Configuration',
+          items: {
+            'Cluster name': 'food-delivery-prod',
+            'Engine': 'Aurora DSQL (PostgreSQL 15.4)',
+            'Region': 'us-east-1 (N. Virginia)',
+          },
+        },
+        {
+          title: 'Instance',
+          items: {
+            'Instance class': 'db.r6g.large',
+            'vCPU': '2 cores',
+            'Memory': '16 GB RAM',
+            'Estimated cost': '~$0.250/hour (~$180/month)',
+            'Multi-AZ': 'Enabled (automatic failover)',
+          },
+        },
+        {
+          title: 'Storage & Performance',
+          items: {
+            'Storage type': 'Aurora Auto-scaling',
+            'Initial storage': '20 GB',
+            'Max storage': '1 TB (scales automatically)',
+            'IOPS': '3,000 baseline (bursts to 10,000)',
+            'Connection pooling': 'Enabled (max 100 connections)',
+          },
+        },
+        {
+          title: 'Security',
+          items: {
+            'Encryption at rest': 'AES-256 (AWS managed key)',
+            'Encryption in transit': 'TLS 1.3',
+            'Authentication': 'IAM + password',
+            'Public access': 'Disabled',
+            'VPC': 'Default VPC with private subnets',
+          },
+        },
+      ],
+    },
   },
   '200-plus': {
     message: `Excellent! For 200+ restaurants, you'll need a robust configuration:
@@ -332,6 +484,53 @@ This high-capacity configuration handles 1000+ concurrent orders with room to gr
       { id: 'eu-west-1', text: 'Change to Europe (Ireland)' },
     ],
     feedbackEnabled: true,
+    recommendationMeta: {
+      summary: {
+        engine: 'Aurora DSQL',
+        instanceClass: 'db.r6g.xlarge',
+        region: 'us-east-1',
+      },
+      sections: [
+        {
+          title: 'Cluster Configuration',
+          items: {
+            'Cluster name': 'food-delivery-prod',
+            'Engine': 'Aurora DSQL (PostgreSQL 15.4)',
+            'Region': 'us-east-1 (N. Virginia)',
+          },
+        },
+        {
+          title: 'Instance',
+          items: {
+            'Instance class': 'db.r6g.xlarge',
+            'vCPU': '4 cores',
+            'Memory': '32 GB RAM',
+            'Estimated cost': '~$0.500/hour (~$360/month)',
+            'Multi-AZ': 'Enabled (automatic failover)',
+          },
+        },
+        {
+          title: 'Storage & Performance',
+          items: {
+            'Storage type': 'Aurora Auto-scaling',
+            'Initial storage': '50 GB',
+            'Max storage': '2 TB (scales automatically)',
+            'IOPS': '6,000 baseline (bursts to 20,000)',
+            'Connection pooling': 'Enabled (max 200 connections)',
+          },
+        },
+        {
+          title: 'Security',
+          items: {
+            'Encryption at rest': 'AES-256 (AWS managed key)',
+            'Encryption in transit': 'TLS 1.3',
+            'Authentication': 'IAM + password',
+            'Public access': 'Disabled',
+            'VPC': 'Default VPC with private subnets',
+          },
+        },
+      ],
+    },
   },
 
   // === CREATE DATABASE SCRIPT - Region Selection (End of Step 1: Context and Requirements) ===
@@ -2494,8 +2693,476 @@ Your ecommerce database is now running on Aurora DSQL!`,
   },
 ];
 
+// E-COMMERCE ANALYTICS demo script - Sarah's journey from database creation to first queries
+// Flow: Use case discovery → Recommendations → Configuration → Creation → Sample data → Schema → Import → Queries
+const ECOMMERCE_ANALYTICS_SCRIPT: DemoStep[] = [
+  // Step 0: Welcome and use case discovery
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `I'm here to help you set up your database. What will you be using it for?`,
+      feedbackEnabled: true,
+    },
+    prompts: [
+      { id: 'ecommerce-analytics', text: 'E-commerce analytics (orders, customers, inventory)' },
+      { id: 'content-management', text: 'Content management system' },
+      { id: 'other-usecase', text: 'Something else' },
+    ],
+    delay: 1000,
+  },
+  // Step 1: Recommendations based on e-commerce use case
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `For e-commerce analytics with complex queries across orders, customers, and inventory, I recommend:
+
+**Aurora PostgreSQL** - Optimized for analytics workloads
+**db.r6g.xlarge** - 4 vCPU, 32 GB RAM (handles 50K+ orders/month)
+**Multi-AZ deployment** - High availability for production
+
+Estimated cost: ~$450/month
+
+Would you like me to explain these choices or proceed with this configuration?`,
+      feedbackEnabled: true,
+    },
+    prompts: [
+      { id: 'why-postgresql', text: 'Why PostgreSQL over MySQL?' },
+      { id: 'proceed-config', text: 'Proceed with this configuration' },
+      { id: 'adjust-config', text: 'I need to adjust the configuration' },
+    ],
+    delay: 1500,
+  },
+  // Step 2: Educational explanation (PostgreSQL vs MySQL)
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `**PostgreSQL excels at complex analytical queries:**
+
+• **Window functions & CTEs** - Essential for revenue trends, cohort analysis
+• **Better JSON support** - Flexible product attributes and metadata
+• **Concurrent reads** - Multiple analysts querying simultaneously
+• **Full-text search** - Product catalog search
+
+MySQL is faster for simple transactional workloads, but for analytics dashboards, trend analysis, and business intelligence - PostgreSQL is the better choice.
+
+Ready to continue with the configuration?`,
+      feedbackEnabled: true,
+    },
+    prompts: [
+      { id: 'continue-config', text: 'Yes, continue' },
+      { id: 'use-mysql', text: 'Actually, use MySQL instead' },
+    ],
+    delay: 1500,
+  },
+  // Step 3: Configuration refinement questions
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `A few quick questions to finalize your configuration:
+
+**Expected data volume?**
+Based on 50K orders/month, I estimate ~50GB initial storage with auto-scaling.
+
+**Access requirements?**
+I recommend VPC-only access (more secure), but public access is available if needed.
+
+**Region preference?**
+US East (N. Virginia) has the lowest latency for most US users.`,
+      feedbackEnabled: true,
+    },
+    prompts: [
+      { id: 'config-default', text: 'Use recommended settings' },
+      { id: 'config-public', text: 'Enable public access' },
+      { id: 'config-region', text: 'Change region' },
+    ],
+    delay: 1500,
+  },
+  // Step 4: Summary with action buttons
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Here's what I'll set up for your TechStyle analytics database:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONFIGURATION SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• **Cluster name:** techstyle-analytics-prod
+• **Engine:** Aurora PostgreSQL 15.4
+• **Instance:** db.r6g.xlarge (4 vCPU, 32 GB RAM)
+• **Storage:** 50 GB auto-scaling (up to 1 TB)
+• **Region:** US East (N. Virginia)
+• **Multi-AZ:** Enabled
+• **Monthly cost:** ~$450
+
+How would you like to proceed?`,
+      feedbackEnabled: true,
+      actions: [
+        { id: 'create-database', label: 'Create database', variant: 'primary' },
+        { id: 'customize-config', label: 'Customize' },
+      ],
+      stepCompleted: 'Context and requirements',
+    },
+    updateStep: { stepId: 'context-requirements', status: 'success' },
+    delay: 1500,
+  },
+  // Step 5: Database creation starts
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Creating **techstyle-analytics-prod** with optimized settings for analytics workloads. This takes 5-7 minutes.
+
+• Provisioning Aurora cluster...`,
+    },
+    transitionView: 'design',
+    setPath: 'auto-setup',
+    updateStep: { stepId: 'db-design', status: 'in-progress' },
+    updateConfigSection: {
+      sectionId: 'cluster',
+      status: 'in-progress',
+      values: {
+        'Cluster name': 'techstyle-analytics-prod',
+        'Engine': 'Aurora PostgreSQL 15.4',
+        'Region': 'us-east-1',
+      },
+    },
+    delay: 1500,
+  },
+  // Step 6: Cluster configured
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Aurora cluster provisioned
+• Configuring instance...`,
+    },
+    updateConfigSection: {
+      sectionId: 'cluster',
+      status: 'success',
+      values: {
+        'Cluster name': 'techstyle-analytics-prod',
+        'Engine': 'Aurora PostgreSQL 15.4',
+        'Region': 'us-east-1',
+      },
+    },
+    delay: 1500,
+  },
+  // Step 7: Instance configured
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Aurora cluster provisioned
+✓ Instance configured (db.r6g.xlarge)
+• Setting up storage...`,
+    },
+    updateConfigSection: {
+      sectionId: 'instance',
+      status: 'success',
+      values: {
+        'Instance class': 'db.r6g.xlarge',
+        'vCPU': '4',
+        'Memory': '32 GB',
+        'Multi-AZ': 'Enabled',
+      },
+    },
+    createResource: {
+      id: 'techstyle-analytics-001',
+      name: 'techstyle-analytics-prod - us-east-1',
+      type: 'Aurora PostgreSQL',
+      region: 'us-east-1',
+      status: 'creating',
+    },
+    delay: 1500,
+  },
+  // Step 8: Storage configured
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Aurora cluster provisioned
+✓ Instance configured
+✓ Storage configured (50 GB, auto-scaling)
+• Applying security settings...`,
+    },
+    updateConfigSection: {
+      sectionId: 'storage',
+      status: 'success',
+      values: {
+        'Storage type': 'Auto-scaling',
+        'Initial': '50 GB',
+        'Maximum': '1 TB',
+        'IOPS': '3,000 baseline',
+      },
+    },
+    delay: 1500,
+  },
+  // Step 9: Security configured, database ready
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `✓ Aurora cluster provisioned
+✓ Instance configured
+✓ Storage configured
+✓ Security settings applied
+
+**Database ready!**
+
+Endpoint: techstyle-analytics-prod.cluster-xxxxx.us-east-1.rds.amazonaws.com`,
+      stepCompleted: 'DB Design',
+      feedbackEnabled: true,
+    },
+    updateStep: { stepId: 'db-design', status: 'success' },
+    updateConfigSection: {
+      sectionId: 'security',
+      status: 'success',
+      values: {
+        'Encryption': 'AES-256 (AWS managed)',
+        'TLS': '1.3',
+        'IAM auth': 'Enabled',
+        'Public access': 'Disabled',
+      },
+    },
+    createResource: {
+      id: 'techstyle-analytics-001',
+      name: 'techstyle-analytics-prod - us-east-1',
+      type: 'Aurora PostgreSQL',
+      region: 'us-east-1',
+      status: 'active',
+      endpoint: 'techstyle-analytics-prod.cluster-xxxxx.us-east-1.rds.amazonaws.com',
+    },
+    delay: 2000,
+  },
+  // Step 10: What's Next options
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Your database is empty and ready for data. You have three options:
+
+**1. Import sample dataset** (Recommended for first-time users)
+See how a production e-commerce database looks with realistic data
+
+**2. Import your data**
+Upload your Excel/CSV files or connect to another source
+
+**3. Start from scratch**
+Design your own schema and tables
+
+Which would you like to try?`,
+      feedbackEnabled: true,
+    },
+    transitionView: 'review',
+    updateStep: { stepId: 'review-finish', status: 'in-progress' },
+    prompts: [
+      { id: 'import-sample', text: 'Import sample dataset (recommended)' },
+      { id: 'import-own-data', text: 'Import my own data' },
+      { id: 'start-scratch', text: 'Start from scratch' },
+    ],
+    delay: 1500,
+  },
+  // Step 11: Sample dataset selection
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `**E-commerce & Retail Sample Dataset**
+
+This dataset follows e-commerce best practices with:
+
+| Table | Records | Purpose |
+|-------|---------|---------|
+| customers | 8,500 | Customer profiles & lifetime value |
+| orders | 28,000 | Transaction history |
+| products | 1,200 | Product catalog |
+| order_items | 52,000 | Line items per order |
+| inventory | 1,200 | Stock levels |
+| shipping | 9,500 | Delivery addresses |
+
+**Total:** ~100,000 records across 6 tables
+
+Want to see the schema diagram or customize before importing?`,
+      feedbackEnabled: true,
+    },
+    prompts: [
+      { id: 'preview-schema', text: 'Show me the schema' },
+      { id: 'customize-dataset', text: 'Customize the dataset' },
+      { id: 'import-now', text: 'Import as-is' },
+    ],
+    delay: 1500,
+  },
+  // Step 12: Schema explanation
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `**Schema Design Highlights:**
+
+The schema follows a **star schema** pattern optimized for analytics:
+
+• **customers** ← central entity for customer analytics
+• **orders** ← the heart of transaction analysis (linked to customers)
+• **order_items** ← connects orders to products
+• **products** ← product catalog with categories
+• **inventory** ← stock tracking per product
+• **shipping** ← customer addresses for fulfillment
+
+**Key relationships:**
+• orders.customer_id → customers.customer_id
+• order_items.order_id → orders.order_id
+• order_items.product_id → products.product_id
+
+The product categories are fashion-specific: Tops, Bottoms, Dresses, Outerwear, Accessories, Shoes, Jewelry.
+
+Ready to import?`,
+      feedbackEnabled: true,
+    },
+    prompts: [
+      { id: 'start-import', text: 'Start import' },
+      { id: 'remove-table', text: 'Remove a table' },
+      { id: 'change-categories', text: 'Change product categories' },
+    ],
+    delay: 1500,
+  },
+  // Step 13: Import starts
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `**Starting import...**
+
+Importing 6 tables with ~100,000 records:
+
+✓ customers (8,500 records)
+◐ orders (importing...)
+○ products
+○ order_items
+○ inventory
+○ shipping
+
+Estimated time: 2 minutes`,
+    },
+    delay: 2000,
+  },
+  // Step 14: Import progress with optimization suggestion
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `**Import progress:**
+
+✓ customers (8,500 records)
+✓ orders (28,000 records)
+✓ products (1,200 records)
+◐ order_items (importing...)
+○ inventory
+○ shipping
+
+💡 **Optimization opportunity:** I noticed you'll likely query by order_date frequently. Adding an index would speed up date range queries by ~80%.
+
+Would you like me to add this index?`,
+      feedbackEnabled: true,
+    },
+    prompts: [
+      { id: 'add-index', text: 'Yes, add the index' },
+      { id: 'skip-index', text: 'Skip for now' },
+    ],
+    delay: 2000,
+  },
+  // Step 15: Import complete
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `**Import complete!** ✓
+
+All data validated and ready:
+• **8,500** customers
+• **28,000** orders ($4.2M total revenue)
+• **1,200** products across 7 categories
+• All foreign key relationships valid
+
+✓ Added index on orders.order_date (+2MB storage)
+
+What would you like to do next?`,
+      feedbackEnabled: true,
+      stepCompleted: 'Review and finish',
+    },
+    updateStep: { stepId: 'review-finish', status: 'success' },
+    prompts: [
+      { id: 'explore-data', text: 'Explore my data' },
+      { id: 'run-query', text: 'Run a query' },
+      { id: 'view-dashboard', text: 'View database details' },
+    ],
+    delay: 1500,
+  },
+  // Step 16: Guided exploration
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Let's explore your data! Try asking questions like:
+
+• "Show me top customers by revenue"
+• "What are our best-selling product categories?"
+• "Which products are low on inventory?"
+
+Or click one of the suggestions below:`,
+      feedbackEnabled: true,
+    },
+    prompts: [
+      { id: 'query-top-customers', text: 'Show me top customers by revenue' },
+      { id: 'query-categories', text: 'What are our best-selling categories?' },
+      { id: 'query-inventory', text: 'Which products are running low?' },
+    ],
+    delay: 1500,
+  },
+  // Step 17: Query result example
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `**Top 10 Customers by Lifetime Value:**
+
+| Customer | Email | Lifetime Value | Orders |
+|----------|-------|----------------|--------|
+| Emma Wilson | emma.wilson@email.com | $8,945.50 | 47 |
+| James Chen | james.chen@email.com | $7,832.25 | 38 |
+| Sofia Martinez | sofia.martinez@email.com | $6,721.80 | 42 |
+| Liam Johnson | liam.johnson@email.com | $6,543.00 | 35 |
+| Olivia Brown | olivia.brown@email.com | $5,987.75 | 31 |
+
+**SQL used:**
+\`\`\`sql
+SELECT first_name, last_name, email, lifetime_value, order_count
+FROM customers
+ORDER BY lifetime_value DESC
+LIMIT 10;
+\`\`\`
+
+Would you like to try another query or import your actual data?`,
+      feedbackEnabled: true,
+    },
+    prompts: [
+      { id: 'query-another', text: 'Try another query' },
+      { id: 'import-real-data', text: 'Import my real data' },
+      { id: 'done-exploring', text: 'I\'m done exploring' },
+    ],
+    delay: 1500,
+  },
+  // Step 18: Transition to real data
+  {
+    agentMessage: {
+      type: 'agent',
+      content: `Now that you understand the structure, you're ready to import your actual data!
+
+I can help you:
+• **Map your Excel columns** to this schema
+• **Identify data quality issues** before import
+• **Suggest schema modifications** if needed
+
+When you're ready, navigate to **Import Data** to get started, or continue exploring the sample data.`,
+      feedbackEnabled: true,
+    },
+    prompts: [
+      { id: 'go-import', text: 'Go to Import Data' },
+      { id: 'keep-exploring', text: 'Keep exploring sample data' },
+      { id: 'view-database', text: 'View database details' },
+    ],
+    delay: 1500,
+  },
+];
+
 // Track which demo path to use (set when user clicks initial prompt or action)
-let currentDemoPath: 'new' | 'clone' | 'migrate' | 'configure' = 'new';
+let currentDemoPath: 'new' | 'clone' | 'migrate' | 'configure' | 'ecommerce' = 'new';
 
 // Get the appropriate demo script for a workflow
 function getDemoScript(workflowId: string | undefined): DemoStep[] {
@@ -2510,6 +3177,8 @@ function getDemoScript(workflowId: string | undefined): DemoStep[] {
         return MIGRATE_DATABASE_SCRIPT;
       } else if (currentDemoPath === 'configure') {
         return CONFIGURE_TOGETHER_SCRIPT;
+      } else if (currentDemoPath === 'ecommerce') {
+        return ECOMMERCE_ANALYTICS_SCRIPT;
       }
       return CREATE_DATABASE_SCRIPT;
     default:
@@ -2527,13 +3196,13 @@ const MIGRATION_WORKFLOW_STEPS = [
 ];
 
 // Set the demo path (module level for script access)
-function setDemoPathInternal(path: 'new' | 'clone' | 'migrate' | 'configure') {
+function setDemoPathInternal(path: 'new' | 'clone' | 'migrate' | 'configure' | 'ecommerce') {
   currentDemoPath = path;
 }
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   // App store for persisting databases and activities
-  const { addDatabase, addActivity } = useAppStore();
+  const { addDatabase, addActivity, updateDatabase } = useAppStore();
 
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
@@ -2541,6 +3210,24 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [showPrompts, setShowPrompts] = useState(true);
   const [isAgentTyping, setIsAgentTyping] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  // Drawer expansion state
+  const [drawerMode, setDrawerMode] = useState<DrawerExpansionMode>('normal');
+
+  // Helper to expand drawer for workflows
+  const expandDrawerForWorkflow = useCallback(() => {
+    setDrawerMode('expanded');
+    setIsDrawerOpen(true);
+  }, []);
+
+  // SplitPanel state for configuration preview
+  const [splitPanelConfig, setSplitPanelConfig] = useState<RecommendationMeta | null>(null);
+
+  // Database creation tracking state
+  const [creationStatus, setCreationStatus] = useState<CreationStatus>('idle');
+  const [createdDatabaseId, setCreatedDatabaseId] = useState<string | null>(null);
+  const [createdDatabaseType, setCreatedDatabaseType] = useState<'dsql' | 'rds' | null>(null);
+  const [createdDatabaseName, setCreatedDatabaseName] = useState<string | null>(null);
 
   // Workflow state
   const [workflow, setWorkflow] = useState<WorkflowState>({
@@ -2560,21 +3247,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const scriptStepRef = useRef(0);
   const isProcessingRef = useRef(false);
 
+  // Conversation history for API calls
+  const conversationRef = useRef<ConversationMessage[]>([]);
+
   // Navigation callback
   const navigateRef = useRef<((path: string) => void) | null>(null);
 
   // Refs for app store functions (to avoid dependency issues)
   const addDatabaseRef = useRef(addDatabase);
   const addActivityRef = useRef(addActivity);
+  const updateDatabaseRef = useRef(updateDatabase);
   addDatabaseRef.current = addDatabase;
   addActivityRef.current = addActivity;
+  updateDatabaseRef.current = updateDatabase;
 
   const setNavigateCallback = useCallback((callback: (path: string) => void) => {
     navigateRef.current = callback;
   }, []);
 
   // Set demo path and update workflow steps if needed
-  const setDemoPath = useCallback((path: 'new' | 'clone' | 'migrate' | 'configure') => {
+  const setDemoPath = useCallback((path: 'new' | 'clone' | 'migrate' | 'configure' | 'ecommerce') => {
     setDemoPathInternal(path);
 
     // Update workflow steps for migration path
@@ -2595,6 +3287,100 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
     setMessages(prev => [...prev, newMessage]);
   }, []);
+
+  // Ref for addNotification to avoid dependency issues
+  const addNotificationRef = useRef(useAppStore.getState().addNotification);
+  addNotificationRef.current = useAppStore.getState().addNotification;
+
+  // Database creation management functions
+  const startDatabaseCreation = useCallback((databaseId: string, databaseType: 'dsql' | 'rds', databaseName: string) => {
+    setCreationStatus('creating');
+    setCreatedDatabaseId(databaseId);
+    setCreatedDatabaseType(databaseType);
+    setCreatedDatabaseName(databaseName);
+    setIsDrawerOpen(true);
+  }, []);
+
+  const onCreationComplete = useCallback(() => {
+    const dbName = createdDatabaseName || 'Database';
+
+    // Update status
+    setCreationStatus('completed');
+
+    // Show success flashbar notification
+    addNotificationRef.current({
+      type: 'success',
+      content: `Database cluster "${dbName}" created successfully!`,
+      dismissible: true,
+    });
+
+    // Add completion message to chat
+    setMessages(prev => [...prev, {
+      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      type: 'status',
+      content: `Your database cluster "${dbName}" has been created successfully and is now active.`,
+      timestamp: new Date(),
+    }]);
+
+    // Show follow-up prompts
+    setCurrentPrompts([
+      { id: 'import-data', text: 'Import data' },
+      { id: 'connect-database', text: 'Connect to database' },
+      { id: 'view-monitoring', text: 'View monitoring' },
+    ]);
+    setShowPrompts(true);
+  }, [createdDatabaseName]);
+
+  const clearCreationState = useCallback(() => {
+    setCreationStatus('idle');
+    setCreatedDatabaseId(null);
+    setCreatedDatabaseType(null);
+    setCreatedDatabaseName(null);
+  }, []);
+
+  // Send message to Bedrock API
+  const sendToAPI = useCallback(async (userContent: string) => {
+    // Add user message to conversation history
+    conversationRef.current.push({ role: 'user', content: userContent });
+
+    setIsAgentTyping(true);
+
+    try {
+      const response = await chatApi.sendMessage(conversationRef.current, {
+        currentPage: workflow.config?.id || '/create-database',
+        selectedOption: workflow.selectedOption || undefined,
+      });
+
+      // Add assistant response to history
+      conversationRef.current.push({ role: 'assistant', content: response.message });
+
+      // Add agent message with dynamic component
+      addMessage({
+        type: 'agent',
+        content: response.message,
+        feedbackEnabled: true,
+        dynamicComponent: response.component,
+        suggestedActions: response.suggestedActions,
+        requiresConfirmation: response.requiresConfirmation,
+        confirmAction: response.confirmAction,
+      });
+
+      // Update prompts if provided
+      if (response.suggestedActions) {
+        setCurrentPrompts(response.suggestedActions);
+        setShowPrompts(true);
+      } else {
+        setShowPrompts(false);
+      }
+    } catch (error) {
+      addMessage({
+        type: 'agent',
+        content: `Error: ${error instanceof Error ? error.message : 'Failed to get response'}`,
+      });
+    } finally {
+      setIsAgentTyping(false);
+    }
+  }, [workflow.config?.id, workflow.selectedOption, addMessage]);
 
   // Run the next demo step
   const executeDemoStep = useCallback(async (stepIndex: number) => {
@@ -2742,18 +3528,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
     // If this is the first message in a workflow, transition to chat view (centered)
     if (workflow.isActive && workflow.view === 'entry') {
-      // First message - transition to centered chat view and run demo
       setWorkflow(prev => ({ ...prev, view: 'chat' }));
-      setIsAgentTyping(true);
-      setShowPrompts(false);
-      setTimeout(() => {
-        executeDemoStep(0);
-      }, 1500);
-    } else {
-      // Continue demo
-      runNextStep();
     }
-  }, [addMessage, workflow.isActive, workflow.view, executeDemoStep, runNextStep]);
+
+    // Send to Bedrock API
+    sendToAPI(content);
+  }, [addMessage, workflow.isActive, workflow.view, sendToAPI]);
 
   // Select a support prompt
   const selectPrompt = useCallback((promptId: string) => {
@@ -2769,7 +3549,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       // Check if this is "View the database" prompt - navigate to database details
       if (promptId === 'view-database' && navigateRef.current) {
         setTimeout(() => {
-          navigateRef.current?.('/database-details');
+          navigateRef.current?.(`/database-details?id=${createdDatabaseId}&type=${createdDatabaseType || 'dsql'}`);
         }, 500);
         return;
       }
@@ -2799,163 +3579,122 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           startWorkflowInContext(importConfig);
 
           // Navigate to database details page
-          navigateRef.current?.('/database-details');
+          navigateRef.current?.(`/database-details?id=${createdDatabaseId}&type=${createdDatabaseType || 'dsql'}`);
         }, 500);
         return;
       }
 
-      if (promptId === 'connect' || promptId === 'schema') {
-        // These could navigate to other pages in the future
-        runNextStep();
-        return;
-      }
-
-      // Check if there's a prompt-specific response
-      const promptResponse = PROMPT_RESPONSES[promptId];
-
-      // If promptResponse exists but has empty message, advance the script with potential auto-chaining
-      if (promptResponse && promptResponse.message === '') {
-        runNextStep();
-
-        // Database selection prompts - auto-advance through analyzing → analysis results → target recommendation
-        if (promptId === 'db-ecommerce' || promptId === 'db-analytics' || promptId === 'db-manual') {
-          const runAnalysisSequence = async () => {
-            // Step 6: Analysis results
-            await new Promise(r => setTimeout(r, 1500));
-            if (!isProcessingRef.current) {
-              isProcessingRef.current = true;
-              setIsAgentTyping(true);
-              await executeDemoStep(scriptStepRef.current);
-            }
-
-            // Step 7: Target recommendation (has prompts, will stop here)
-            await new Promise(r => setTimeout(r, 2500));
-            if (!isProcessingRef.current) {
-              isProcessingRef.current = true;
-              setIsAgentTyping(true);
-              await executeDemoStep(scriptStepRef.current);
-            }
-          };
-          runAnalysisSequence();
-        }
-
-        // Schedule selection - auto-advance through pre-flight checks → pre-flight results
-        if (promptId === 'schedule-now' || promptId === 'schedule-tonight' || promptId === 'schedule-weekend' || promptId === 'schedule-custom') {
-          const runPreFlightSequence = async () => {
-            // Step 16: Pre-flight results (has action button, will stop here)
-            await new Promise(r => setTimeout(r, 800));
-            if (!isProcessingRef.current) {
-              isProcessingRef.current = true;
-              setIsAgentTyping(true);
-              await executeDemoStep(scriptStepRef.current);
-            }
-          };
-          runPreFlightSequence();
-        }
-
-        return;
-      }
-
-      if (promptResponse) {
-        setIsAgentTyping(true);
-
-        setTimeout(() => {
-          // Apply config updates and step updates
-          setWorkflow(prev => {
-            let newState = { ...prev };
-
-            // Apply config section updates if any
-            if (promptResponse.configUpdates) {
-              const newConfigSections = { ...prev.configSections };
-              for (const update of promptResponse.configUpdates) {
-                newConfigSections[update.sectionId] = {
-                  ...newConfigSections[update.sectionId],
-                  status: update.status,
-                  values: update.values || newConfigSections[update.sectionId].values,
-                };
-              }
-              newState = { ...newState, configSections: newConfigSections };
-            }
-
-            // Apply step status update if any
-            if (promptResponse.updateStep) {
-              const newSteps = prev.steps.map(step =>
-                step.id === promptResponse.updateStep!.stepId
-                  ? { ...step, status: promptResponse.updateStep!.status }
-                  : step
-              );
-              newState = { ...newState, steps: newSteps };
-            }
-
-            return newState;
-          });
-
-          // Add the response message with actions and stepCompleted if present
-          addMessage({
-            type: 'agent',
-            content: promptResponse.message,
-            feedbackEnabled: promptResponse.feedbackEnabled,
-            actions: promptResponse.actions,
-            stepCompleted: promptResponse.stepCompleted,
-          });
-
-          // Set next prompts if any
-          if (promptResponse.nextPrompts) {
-            setCurrentPrompts(promptResponse.nextPrompts);
-            setShowPrompts(true);
-          } else {
-            setShowPrompts(false);
-          }
-
-          setIsAgentTyping(false);
-
-          // If this is a security confirmation, trigger Step 4 of CONFIGURE_TOGETHER_SCRIPT to show final summary
-          if (promptId === 'security-confirm' || promptId === 'security-custom-key' || promptId === 'security-change-vpc') {
-            // Skip to Step 4 (final summary) - steps 0-3 are handled by PROMPT_RESPONSES
-            scriptStepRef.current = 4;
-            // Short delay then run Step 4 to show the summary with Create database button
-            setTimeout(() => {
-              runNextStep();
-            }, 800);
-          }
-        }, 1200);
-        return;
-      }
-
-      // Check if this is a multi-region prompt - need to chain build steps
-      if (promptId === 'multi-region-yes' || promptId === 'multi-region-no') {
-        // Run step 6 (build starts), then auto-chain 7 and 8
-        runNextStep();
-
-        const runBuildSequence = async () => {
-          // Wait for step 6 to complete
-          await new Promise(r => setTimeout(r, 2000));
-
-          // Step 7: Build progress
-          if (!isProcessingRef.current) {
-            isProcessingRef.current = true;
-            setIsAgentTyping(true);
-            await executeDemoStep(scriptStepRef.current);
-          }
-
-          // Wait then step 8: Build complete
-          await new Promise(r => setTimeout(r, 2500));
-          if (!isProcessingRef.current) {
-            isProcessingRef.current = true;
-            setIsAgentTyping(true);
-            await executeDemoStep(scriptStepRef.current);
-          }
-        };
-
-        runBuildSequence();
-      } else {
-        runNextStep();
-      }
+      // Send prompt text to Bedrock API
+      sendToAPI(prompt.text);
     }
-  }, [currentPrompts, addMessage, runNextStep, executeDemoStep, startWorkflowInContext]);
+  }, [currentPrompts, addMessage, sendToAPI, startWorkflowInContext]);
 
-  // Trigger an action from a message
-  const triggerAction = useCallback((actionId: string) => {
+  // Helper to detect if an action ID indicates database creation
+  const isCreationAction = (actionId: string): boolean => {
+    const id = actionId.toLowerCase();
+
+    // Explicit action IDs that trigger creation
+    const explicitIds = [
+      'complete-setup',
+      'confirm-create',
+      'start-build-configured',
+      'auto-setup',
+      'create-database',
+      'create_database',
+      'deploy-database',
+      'deploy_database',
+      'provision-database',
+      'provision_database',
+      'create-cluster',
+      'create_cluster',
+      'deploy-cluster',
+      'deploy_cluster',
+    ];
+
+    if (explicitIds.includes(id)) return true;
+
+    // Pattern matching for dynamic action IDs
+    const createPatterns = ['create', 'deploy', 'provision', 'launch', 'start'];
+    const targetPatterns = ['database', 'cluster', 'db', 'aurora', 'dsql', 'rds'];
+
+    const hasCreateWord = createPatterns.some(p => id.includes(p));
+    const hasTargetWord = targetPatterns.some(p => id.includes(p));
+
+    return hasCreateWord && hasTargetWord;
+  };
+
+  // Trigger an action from a message (supports optional params from dynamic components)
+  const triggerAction = useCallback((actionId: string, params?: Record<string, unknown>) => {
+    // Handle database creation confirmation
+    if (isCreationAction(actionId)) {
+      // Generate database ID and get name from params or config
+      const databaseId = `db-${Date.now()}`;
+
+      // Try to get database info from action params first, then fall back to workflow config
+      const databaseName = (params?.databaseName as string) ||
+        (params?.clusterName as string) ||
+        (params?.name as string) ||
+        workflow.configSections.cluster.values['Cluster name'] ||
+        'my-database';
+
+      const region = (params?.region as string) ||
+        workflow.configSections.cluster.values['Region'] ||
+        'us-east-1';
+
+      const engine = (params?.engine as string) || 'Aurora DSQL - PostgreSQL';
+
+      // Add database to store with creating status
+      addDatabaseRef.current({
+        id: databaseId,
+        name: databaseName,
+        engine: engine,
+        region: region,
+        status: 'creating',
+        endpoint: `${databaseName}.dsql.${region}.on.aws`,
+        createdAt: new Date(),
+        connections: 0,
+        tags: { Environment: 'Production' },
+      });
+
+      // Add activity
+      addActivityRef.current({
+        type: 'database_created',
+        title: 'Database cluster creation started',
+        description: `${databaseName} cluster is being created in ${region}`,
+        resourceId: databaseName,
+        resourceName: databaseName,
+      });
+
+      // Start creation tracking
+      startDatabaseCreation(databaseId, 'dsql', databaseName);
+
+      // Add status message to chat
+      addMessage({
+        type: 'status',
+        content: `Creating database cluster "${databaseName}"... You can continue chatting while the cluster is being provisioned.`,
+      });
+
+      // Navigate to database details page
+      if (navigateRef.current) {
+        navigateRef.current(`/database-details?id=${databaseId}&type=dsql`);
+      }
+
+      return;
+    }
+
+    // For other actions, add as user message and send to API
+    const actionMessage = `Execute action: ${actionId}`;
+    addMessage({
+      type: 'user',
+      content: actionMessage,
+    });
+    sendToAPI(actionMessage);
+  }, [addMessage, sendToAPI, workflow.configSections, startDatabaseCreation]);
+
+  // DEPRECATED: Old demo script action handling - keeping function stub for reference
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // @ts-expect-error - keeping function stub for reference
+  const _legacyTriggerAction = useCallback((actionId: string) => {
     if (actionId === 'auto-setup') {
       // Transition to design view with auto-setup path
       setWorkflow(prev => ({ ...prev, view: 'design', path: 'auto-setup' }));
@@ -2989,33 +3728,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           await executeDemoStep(scriptStepRef.current);
         }
 
-        // Save database to store
+        // Update existing database status to active
         await new Promise(r => setTimeout(r, 500));
-        addDatabaseRef.current({
-          id: `db-${Date.now()}`,
-          name: 'food-delivery-prod',
-          engine: 'Aurora DSQL - PostgreSQL',
-          region: 'us-east-1',
-          status: 'active',
-          endpoint: 'food-delivery-xyz.dsql.us-east-1.on.aws',
-          createdAt: new Date(),
-          connections: 0,
-          tags: { Environment: 'Production', Application: 'Food Delivery' },
-        });
+        if (createdDatabaseId) {
+          updateDatabaseRef.current(createdDatabaseId, { status: 'active' });
+        }
 
         // Add activity
+        const dbName = createdDatabaseName || 'database';
         addActivityRef.current({
           type: 'database_created',
           title: 'Database cluster created',
-          description: 'food-delivery-prod cluster is now active in us-east-1',
-          resourceId: 'food-delivery-prod',
-          resourceName: 'food-delivery-prod',
+          description: `${dbName} cluster is now active`,
+          resourceId: createdDatabaseId || dbName,
+          resourceName: dbName,
         });
 
         // Navigate to database details page after completion
         await new Promise(r => setTimeout(r, 1000));
         if (navigateRef.current) {
-          navigateRef.current('/database-details');
+          navigateRef.current(`/database-details?id=${createdDatabaseId}&type=${createdDatabaseType || 'dsql'}`);
         }
       };
 
@@ -3507,7 +4239,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       isActive: true,
       config,
       view: 'entry',
-      selectedOption: null,
+      selectedOption: config.options[0]?.id || null, // Default to first option
       steps: config.steps.map(s => ({ ...s, status: 'pending' as StepStatus })),
       currentStepIndex: 0,
       resource: null,
@@ -3572,6 +4304,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     showPrompts,
     isAgentTyping,
     isDrawerOpen,
+    drawerMode,
+    setDrawerMode,
+    expandDrawerForWorkflow,
+    splitPanelConfig,
+    setSplitPanelConfig,
+    creationStatus,
+    createdDatabaseId,
+    createdDatabaseType,
+    createdDatabaseName,
+    startDatabaseCreation,
+    onCreationComplete,
+    clearCreationState,
     workflow,
     sendMessage,
     selectPrompt,

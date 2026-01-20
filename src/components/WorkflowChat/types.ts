@@ -37,6 +37,20 @@ export interface SupportPrompt {
   text: string;
 }
 
+// Dynamic component from AI response
+export interface DynamicComponent {
+  type: string;
+  props: Record<string, unknown>;
+}
+
+// Confirmation action for user authorized actions
+export interface ConfirmAction {
+  label: string;
+  variant: 'primary' | 'normal';
+  action: string;
+  params?: Record<string, unknown>;
+}
+
 export interface Message {
   id: string;
   type: MessageType;
@@ -45,6 +59,13 @@ export interface Message {
   actions?: MessageAction[];
   feedbackEnabled?: boolean;
   isConfirmation?: boolean;
+  // NEW: Dynamic component from AI
+  dynamicComponent?: DynamicComponent;
+  // NEW: Suggested follow-up prompts from AI
+  suggestedActions?: SupportPrompt[];
+  // NEW: For user authorized actions pattern
+  requiresConfirmation?: boolean;
+  confirmAction?: ConfirmAction;
 }
 
 export interface MessageAction {
